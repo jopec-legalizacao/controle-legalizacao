@@ -223,3 +223,6 @@ body.papel-equipe .adm{display:none !important}
 .tri.feito{opacity:.6}
 .ed-et .aqui{font-size:12px}
 @media (max-width:860px){.tri{grid-template-columns:1fr}.tri .bts{justify-content:flex-start}}
+.login-box .mark{height:44px;width:auto}
+.login-box .word{height:34px;width:auto;display:block}
+.login-box .alt{font:800 26px var(--f-display);color:#fff}
