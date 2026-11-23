@@ -352,7 +352,7 @@ function abrirDetalhe(id, mostrarTudo = false) {
         ${admin() && ['andamento', 'pausado'].includes(p.situacao) ? `
         <div class="card" style="padding:12px;margin-bottom:10px">
           <div style="display:flex;gap:8px;flex-wrap:wrap"><input id="n-txt" class="busca" style="max-width:none;flex:3" placeholder="O que aconteceu? (ex.: DBE feito)" list="dl-frases2"><input type="date" id="n-data" class="busca" style="flex:0 0 150px;min-width:0" value="${hoje()}"><button class="btn pri" id="b-reg">Registrar</button></div>
-          <div class="frases">${S.config.frases.slice(0, 10).map(f => `<button data-fr="${h(f)}">${h(f)}</button>`).join('')}</div>
+          ${frasesHTML('n-txt')}
           <datalist id="dl-frases2">${S.config.frases.map(f => `<option value="${h(f)}">`).join('')}</datalist></div>` : ''}
         <div class="diario">${dias.map(d => d.auto
           ? `<div class="dia auto ${d.data === hoje() ? 'hoje' : ''}"><div class="d"><b>${fmtD(d.data).slice(0, 5)}</b>${DS[parseD(d.data).getDay()]}</div><div class="t">${h(d.txt)}${d.rep ? ' <span class="chip">mantido</span>' : ''}</div></div>`
@@ -388,7 +388,7 @@ function abrirDetalhe(id, mostrarTudo = false) {
   const m = $('#modal-root');
   const bt = $('#b-tudo', m); if (bt) bt.onclick = () => abrirDetalhe(id, true);
   if (!admin()) return;
-  $$('[data-fr]', m).forEach(b => b.onclick = () => { $('#n-txt').value = b.dataset.fr; $('#n-txt').focus(); });
+  ligarFrases('n-txt');
   const br = $('#b-reg', m); if (br) br.onclick = async () => { const t = $('#n-txt').value.trim(); if (!t) return $('#n-txt').focus(); if (await acao(() => registrar(id, t, { data: $('#n-data').value || hoje() }), 'Registrado')) abrirDetalhe(id); };
   const nt = $('#n-txt', m); if (nt) nt.onkeydown = e => { if (e.key === 'Enter') br.click(); };
   $$('[data-delreg]', m).forEach(b => b.onclick = async () => { if (confirm('Apagar este registro do diário?') && await acao(() => DB.del(T.atual, 'id', b.dataset.delreg), 'Registro apagado')) abrirDetalhe(id); });
@@ -508,6 +508,35 @@ function perguntarNovoPreset(lista, base, { forcar = false, cliente = '' } = {})
   });
 }
 
+
+// ---------------------------------------------------------------- opções de status (frases rápidas) — criar/remover na hora
+function frasesHTML(id) {
+  return `<div class="frases" data-frases-for="${id}"><button type="button" class="fr-add" data-fradd="${id}" title="Guardar o texto digitado como opção para os próximos">⭐ Salvar o que digitei como opção</button>${S.config.frases.map(f => `<span class="fr"><button type="button" data-fr="${h(f)}" title="Usar este status">${h(f)}</button><button type="button" class="fr-x" data-frx="${h(f)}" title="Remover esta opção">×</button></span>`).join('')}</div>`;
+}
+async function salvarFrases(lista) {
+  const antes = S.config.frases; S.config.frases = lista;
+  try { await DB.salvaConfig({ ...S.config, frases: lista }); } catch (e) { S.config.frases = antes; alert('Não foi possível salvar a opção: ' + (e.message || e)); return false; }
+  $$('datalist[id^="dl-frases"]').forEach(dl => dl.innerHTML = lista.map(f => `<option value="${h(f)}">`).join(''));
+  return true;
+}
+function ligarFrases(id) {
+  const box = document.querySelector(`[data-frases-for="${id}"]`); const inp = document.getElementById(id); if (!box || !inp) return;
+  const redesenha = () => { box.outerHTML = frasesHTML(id); ligarFrases(id); };
+  $$('[data-fr]', box).forEach(b => b.onclick = () => { inp.value = b.dataset.fr; inp.focus(); });
+  $$('[data-frx]', box).forEach(b => b.onclick = async () => {
+    if (!confirm(`Remover "${b.dataset.frx}" das opções de status?`)) return;
+    if (await salvarFrases(S.config.frases.filter(f => f !== b.dataset.frx))) { toast('Opção removida'); redesenha(); }
+  });
+  const add = box.querySelector('[data-fradd]');
+  const marca = () => { const t = inp.value.trim(); add.classList.toggle('novo', !!t && !S.config.frases.some(f => normEt(f) === normEt(t))); };
+  inp.addEventListener('input', marca); marca();
+  add.onclick = async () => {
+    const t = inp.value.trim(); if (!t) { inp.focus(); return toast('Digite o status no campo e clique em ⭐ para salvar'); }
+    if (S.config.frases.some(f => normEt(f) === normEt(t))) return toast('Essa opção já existe');
+    if (await salvarFrases([t, ...S.config.frases])) { toast('Nova opção de status salva'); redesenha(); }
+  };
+}
+
 // ---------------------------------------------------------------- formulário de processo (novo / editar)
 async function formProcesso(p = null, opts = {}) {
   // sempre busca o cardápio atualizado antes de abrir (e semeia os sugeridos se estiver vazio)
@@ -547,7 +576,7 @@ async function formProcesso(p = null, opts = {}) {
       <div class="campo c2"><label>Honorários (R$)</label><input type="number" step="0.01" id="f-hon" value="${h(p.honorarios ?? '')}"></div>
       <div class="campo c2"><label>Gratificação (R$)</label><input type="number" step="0.01" id="f-grat" value="${h(p.gratificacao ?? '')}"></div>
       <div class="campo c2"></div>
-      ${novo ? `<div class="campo c6"><label>Status atual (vai para o diário de hoje)</label><input id="f-st0" list="dl-frases3" placeholder="Ex.: Orçamento enviado" value="${h(opts.status || '')}"></div>` : ''}
+      ${novo ? `<div class="campo c6"><label>Status atual (vai para o diário de hoje)</label><input id="f-st0" list="dl-frases3" placeholder="Ex.: Orçamento enviado" value="${h(opts.status || '')}">${frasesHTML('f-st0')}</div>` : ''}
       <div class="campo c6"><label>Observações</label><textarea id="f-obs">${h(p.observacoes || '')}</textarea></div>
     </div>
     <datalist id="dl-clientes">${[...new Set(S.processos.map(x => x.cliente))].sort().map(c => `<option value="${h(c)}">`).join('')}</datalist>
@@ -585,6 +614,7 @@ async function formProcesso(p = null, opts = {}) {
     $('#s-junta').onchange = ev => { const pr = S.presets.find(x => x.id === ev.target.value); if (pr) { const nomes = new Set(etapas.map(e => e.nome)); (pr.etapas || []).forEach(e => { if (!nomes.has(e.nome)) etapas.push({ nome: e.nome, descricao: e.descricao, prazo: e.prazo, status: 'pendente' }); }); desenha(); toast('Etapas juntadas (sem repetir as que já existiam)'); } };
   };
   desenha();
+  if ($('#f-st0')) ligarFrases('f-st0');
   $('#b-aplicar').onclick = () => {
     const pr = S.presets.find(x => x.id === $('#f-preset').value); if (!pr) return toast('Escolha um preset');
     if (etapas.length && !confirm('Substituir a esteira atual pelas etapas do preset?')) return;
