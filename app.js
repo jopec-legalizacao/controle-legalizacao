@@ -459,7 +459,12 @@ function formFinalizar(p) {
 }
 
 // ---------------------------------------------------------------- formulário de processo (novo / editar)
-function formProcesso(p = null, opts = {}) {
+async function formProcesso(p = null, opts = {}) {
+  // sempre busca o cardápio atualizado antes de abrir (e semeia os sugeridos se estiver vazio)
+  try {
+    S.presets = (await DB.todos(T.presets)).sort((x, y) => (x.ordem ?? 0) - (y.ordem ?? 0) || x.nome.localeCompare(y.nome));
+    if (!S.presets.length && admin()) { await carregarSugeridos(); }
+  } catch (e) { console.warn(e); }
   const novo = !p; p = p || { situacao: 'andamento', tipo_cliente: 'EMPRESA', data_inicio: hoje(), modo_diario: 'padrao', prioridade: 'normal', aguardando: 'jopec', ...(opts.prefill || {}) };
   let etapas = novo ? [] : etapasDe(p.id).map(e => ({ ...e }));
   const opt = (arr, v) => arr.map(([k, n]) => `<option value="${h(k)}" ${k === v ? 'selected' : ''}>${h(n)}</option>`).join('');
