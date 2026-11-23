@@ -91,6 +91,10 @@ const DB = {
 
 const S = { papel: null, email: '', view: 'painel', aba: 'andamento', busca: '', presets: [], processos: [], etapas: [], atual: [], config: { ...CONFIG_PADRAO }, mesRel: hoje().slice(0, 7) };
 const admin = () => S.papel === 'admin';
+// Logos da Jopec (os mesmos do app de certidões). Se não carregarem, aparece o nome em texto.
+const LOGO_BASE = 'https://certidoes-jopec.vercel.app/';
+const LOGO_MARCA = `<img class="mark" src="${LOGO_BASE}logo-mark.png" alt="" onerror="this.style.display='none'">`;
+const LOGO_NOME = `<img class="word" src="${LOGO_BASE}logo-jopec.png" alt="Jopec" onerror="this.outerHTML='<span class=&quot;alt&quot;>Jopec</span>'">`;
 
 async function carregar() {
   const [p, pr, e, a, c] = await Promise.all([DB.todos(T.presets), DB.todos(T.processos), DB.todos(T.etapas), DB.todos(T.atual), DB.todos(T.config)]);
@@ -165,9 +169,9 @@ function telaLogin(erro = '', emailAnt = '') {
   const perfil = sessionStorage.getItem('leg_perfil_sel') || 'equipe';
   $('#app').innerHTML = `
   <div class="login"><form class="login-box" id="f-login">
-    <img src="icons/icon.svg" width="52" height="52" alt="">
-    <h1>Controle de Legalização</h1>
-    <p>JOPEC Serviços Administrativos</p>
+    <div style="display:flex;align-items:center;gap:10px;background:linear-gradient(120deg,#a23133,#75232a);margin:-32px -32px 18px;padding:18px 24px;border-radius:20px 20px 0 0">${LOGO_MARCA}${LOGO_NOME}</div>
+    <h1 style="font-family:var(--f-display)">Controle de Legalização</h1>
+    <p>Departamento de Legalização · JOPEC</p>
     ${MODO_DEMO ? `<div class="perfis">
       <button type="button" class="perfil ${perfil === 'equipe' ? 'on' : ''}" data-p="equipe"><b>👁 Equipe</b><span>Somente visualizar</span></button>
       <button type="button" class="perfil ${perfil === 'admin' ? 'on' : ''}" data-p="admin"><b>🔑 Administrador</b><span>Acesso total</span></button>
@@ -209,12 +213,14 @@ function render() {
   const nAnd = S.processos.filter(p => p.situacao === 'andamento').length;
   $('#app').innerHTML = `
   <div class="shell">
-    <aside class="side">
-      <div class="marca"><img src="icons/icon.svg" alt=""><div><b>Legalização</b><small>JOPEC</small></div></div>
-      ${NAV.map(([k, ic, nm]) => `<button class="nav ${S.view === k ? 'on' : ''} ${k === 'config' || k === 'triagem' ? 'adm' : ''}" data-v="${k}"><span class="ic">${ic}</span>${nm}${k === 'processos' ? `<span class="n">${nAnd}</span>` : ''}${k === 'triagem' && pendTriagem().length ? `<span class="n">${pendTriagem().length}</span>` : ''}</button>`).join('')}
-      <div class="side-rodape"><span class="papel">${admin() ? '🔑 Administrador' : '👁 Somente leitura'}</span>${S.email ? `<div style="word-break:break-all;margin-bottom:4px">${h(S.email)}</div>` : ''}${MODO_DEMO ? '<div>Modo demonstração</div>' : ''}<div><button class="btn sm ghost" style="color:#cfdbea;padding-left:0" id="b-sair">Sair</button></div></div>
-    </aside>
-    <main class="main" id="main"></main>
+    <header class="band">
+      <div class="wrap topbar">
+        <div class="brand">${LOGO_MARCA}<div>${LOGO_NOME}<h1>Legalização · Controle de Processos</h1></div></div>
+        <div class="usr"><span class="papel">${admin() ? '🔑 Administrador' : '👁 Somente leitura'}</span>${S.email ? `<span class="mail">${h(S.email)}</span>` : ''}${MODO_DEMO ? '<span class="papel">demonstração</span>' : ''}<button class="btn-sair" id="b-sair">Sair</button></div>
+      </div>
+      <nav class="wrap navtop">${NAV.filter(n => admin() || !['config', 'triagem'].includes(n[0])).filter(n => n[0] !== 'triagem' || pendTriagem().length).map(([k, ic, nm]) => `<button class="nav ${S.view === k ? 'on' : ''}" data-v="${k}"><span class="ic">${ic}</span>${nm}${k === 'processos' ? `<span class="n">${nAnd}</span>` : ''}${k === 'triagem' ? `<span class="n">${pendTriagem().length}</span>` : ''}</button>`).join('')}</nav>
+    </header>
+    <main class="main wrap" id="main"></main>
   </div>
   <nav class="mobnav">${NAV.filter(n => admin() || !['config', 'triagem'].includes(n[0])).filter(n => n[0] !== 'triagem' || pendTriagem().length).map(([k, ic, nm]) => `<button class="${S.view === k ? 'on' : ''}" data-v="${k}"><span class="ic">${ic}</span>${nm.split(' ')[0]}</button>`).join('')}</nav>`;
   $$('[data-v]').forEach(b => b.onclick = () => { S.view = b.dataset.v; render(); window.scrollTo(0, 0); });
@@ -316,7 +322,7 @@ function vProcessos(el) {
 function imprimirChefes() {
   const and = S.processos.filter(p => ['andamento', 'pausado'].includes(p.situacao)).sort((a, b) => a.cliente.localeCompare(b.cliente));
   const w = window.open('', '_blank');
-  w.document.write(`<html><head><title>Legalização em andamento</title><style>body{font-family:Segoe UI,Arial;padding:24px;color:#1c2533}h1{font-size:18px;margin:0}p{color:#5b6b80;margin:4px 0 16px}table{width:100%;border-collapse:collapse;font-size:12px}th,td{border:1px solid #d5dbe3;padding:6px 8px;text-align:left;vertical-align:top}th{background:#0f2a4a;color:#fff}</style></head><body>
+  w.document.write(`<html><head><title>Legalização em andamento</title><style>body{font-family:Segoe UI,Arial;padding:24px;color:#231a1b}h1{font-size:18px;margin:0}p{color:#5b6b80;margin:4px 0 16px}table{width:100%;border-collapse:collapse;font-size:12px}th,td{border:1px solid #d5dbe3;padding:6px 8px;text-align:left;vertical-align:top}th{background:#a23133;color:#fff}</style></head><body>
   <h1>LEGALIZAÇÃO EM ANDAMENTO</h1><p>Atualizado em ${new Date().toLocaleDateString('pt-BR')} · ${and.length} processos</p>
   <table><tr><th>#</th><th>Nome</th><th>Tipo</th><th>Serviço</th><th>Etapa atual</th><th>Situação atual</th><th>Último movimento</th></tr>
   ${and.map((p, i) => { const pr = progresso(p), u = ultimoMovimento(p); return `<tr><td>${i + 1}</td><td>${h(p.cliente)}</td><td>${h(p.tipo_cliente)}</td><td>${h(p.servico)}</td><td>${pr.total ? `${Math.min(pr.idx, pr.total)}/${pr.total} · ${h(pr.atual?.nome || 'concluídas')}` : ''}</td><td>${h(statusAtual(p).txt)}</td><td>${u ? fmtD(u.data) : '—'}</td></tr>`; }).join('')}
@@ -794,8 +800,8 @@ function montarEmail(lista, titulo) {
   });
   const texto = `${titulo}\n\n` + linhas.map((l, i) => `${i + 1}. ${l.p.cliente} — ${l.p.servico || ''}\n   Etapa: ${l.etapa}\n   Status: ${l.status}\n   ${l.com}${l.p.situacao === 'andamento' ? ` · ${l.parado} dia(s) sem movimento` : ''}`).join('\n\n') + `\n\n— Controle de Legalização JOPEC`;
   const td = 'style="border:1px solid #d5dbe3;padding:7px 9px;vertical-align:top;font-size:13px"';
-  const html = `<div style="font-family:Segoe UI,Arial,sans-serif;color:#1c2533"><h2 style="color:#0f2a4a;font-size:18px;margin:0 0 4px">${h(titulo)}</h2><p style="color:#5b6b80;margin:0 0 14px">Controle de Legalização · JOPEC Serviços Administrativos</p>
-  <table style="border-collapse:collapse;width:100%"><tr>${['Cliente', 'Serviço', 'Etapa', 'Status', 'Situação'].map(x => `<th style="background:#0f2a4a;color:#fff;padding:7px 9px;text-align:left;font-size:12px">${x}</th>`).join('')}</tr>
+  const html = `<div style="font-family:Segoe UI,Arial,sans-serif;color:#1c2533"><h2 style="color:#a23133;font-size:18px;margin:0 0 4px">${h(titulo)}</h2><p style="color:#5b6b80;margin:0 0 14px">Controle de Legalização · JOPEC Serviços Administrativos</p>
+  <table style="border-collapse:collapse;width:100%"><tr>${['Cliente', 'Serviço', 'Etapa', 'Status', 'Situação'].map(x => `<th style="background:#a23133;color:#fff;padding:7px 9px;text-align:left;font-size:12px">${x}</th>`).join('')}</tr>
   ${linhas.map(l => `<tr><td ${td}><b>${h(l.p.cliente)}</b></td><td ${td}>${h(l.p.servico || '')}</td><td ${td}>${h(l.etapa)}</td><td ${td}>${h(l.status)}</td><td ${td}>${h(l.com)}${l.p.situacao === 'andamento' && l.parado >= S.config.alerta_dias ? `<br><span style="color:#cf222e">${l.parado} dias sem movimento</span>` : ''}</td></tr>`).join('')}</table></div>`;
   return { texto, html };
 }
