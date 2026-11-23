@@ -83,8 +83,12 @@ const DB = {
     if (MODO_DEMO) { const db = this.demo(); db[t] = (db[t] || []).filter(r => r[col] !== val); this.salvaDemo(db); return; }
     const { error } = await sb.from(t).delete().eq(col, val); if (error) throw error;
   },
+  async salvaChave(chave, valor) {
+    if (MODO_DEMO) { const db = this.demo(); db[T.config] = [...(db[T.config] || []).filter(r => r.chave !== chave), { chave, valor }]; this.salvaDemo(db); return; }
+    const { error } = await sb.from(T.config).upsert({ chave, valor }); if (error) throw error;
+  },
   async salvaConfig(valor) {
-    if (MODO_DEMO) { const db = this.demo(); db[T.config] = [{ chave: 'geral', valor }]; this.salvaDemo(db); return; }
+    if (MODO_DEMO) { const db = this.demo(); db[T.config] = [...(db[T.config] || []).filter(r => r.chave !== 'geral'), { chave: 'geral', valor }]; this.salvaDemo(db); return; }
     const { error } = await sb.from(T.config).upsert({ chave: 'geral', valor }); if (error) throw error;
   },
 };
@@ -725,12 +729,13 @@ function vTriagem(el) {
       <div><div class="nome">${h(x.cliente)} <span class="chip">${h(x.tipo)}</span> ${x.dica ? `<span class="chip verde">${h(x.dica)}</span>` : ''}</div>
         <div class="serv">${h(x.servico)}</div>
         <div class="st">Último status na planilha: <b>${h(x.status || '—')}</b>${x.data ? ` · ${fmtD(x.data)}` : ''}</div></div>
-      <div class="bts">${t ? `<span class="chip ${ROT[t.acao]?.[0] || ''}">${ROT[t.acao]?.[1] || t.acao}</span>${proc ? `<button class="btn sm" data-ver="${proc.id}">Abrir</button>` : ''}<button class="btn sm ghost" data-desfaz="${x.chave}">Desfazer</button>` : `
+      <div class="bts">${t ? `<span class="chip ${ROT[t.acao]?.[0] || ''}">${ROT[t.acao]?.[1] || t.acao}</span>${proc ? `<button class="btn sm" data-ver="${proc.id}">Abrir</button>` : ''}<button class="btn sm ghost" data-desfaz="${x.chave}">Desfazer</button><button class="btn sm ghost" data-exc="${x.chave}" title="Tirar da lista de triagem">🗑</button>` : `
         <button class="btn sm ok" data-fin="${x.chave}">✔ Já finalizado</button>
         <button class="btn sm pri" data-est="${x.chave}">▶ Montar esteira</button>
         <button class="btn sm warn" data-pau="${x.chave}">⏸ Pausado</button>
         <button class="btn sm dang" data-des="${x.chave}">✕ Desistiu</button>
-        <button class="btn sm ghost" data-ign="${x.chave}">Ignorar</button>`}</div>
+        <button class="btn sm ghost" data-ign="${x.chave}">Ignorar</button>
+        <button class="btn sm dang" data-exc="${x.chave}" title="Tirar este item da lista de triagem de vez">🗑 Excluir</button>`}</div>
     </div>`; }).join('')}</div>` : '<div class="card vazio">Nenhuma pendência para triar.</div>'}`;
   const item = k => lista.find(x => x.chave === k);
   const pref = x => ({ cliente: x.cliente, tipo_cliente: TIPOS_CLIENTE.includes(x.tipo) ? x.tipo : 'EMPRESA', servico: x.servico, data_inicio: x.data || hoje(), observacoes: `Vindo da planilha. Último status: ${x.status || '—'}` });
@@ -738,6 +743,12 @@ function vTriagem(el) {
   $$('[data-desfaz]', el).forEach(b => b.onclick = () => { const t = { ...(S.config.triagem || {}) }; const pid = t[b.dataset.desfaz]?.pid; delete t[b.dataset.desfaz];
     acao(async () => { await DB.salvaConfig({ ...S.config, triagem: t }); if (pid && confirm('Excluir também o processo que foi criado nesta triagem?')) await DB.del(T.processos, 'id', pid); }, 'Triagem desfeita'); });
   $$('[data-ign]', el).forEach(b => b.onclick = () => acao(() => marcarTriado(b.dataset.ign, { acao: 'ignorado' }), 'Ignorado'));
+  $$('[data-exc]', el).forEach(b => b.onclick = () => { const x = item(b.dataset.exc);
+    if (!confirm(`Excluir "${x.cliente}" da lista de triagem?\n\nO item some da triagem de vez. Processos que você já criou a partir dele continuam no app.`)) return;
+    acao(async () => {
+      await DB.salvaChave('pendencias', PEND().filter(y => y.chave !== x.chave));
+      const t = { ...(S.config.triagem || {}) }; if (t[x.chave]) { delete t[x.chave]; await DB.salvaConfig({ ...S.config, triagem: t }); }
+    }, 'Excluído da triagem'); });
   $$('[data-est]', el).forEach(b => b.onclick = () => { const x = item(b.dataset.est);
     formProcesso(null, { prefill: pref(x), status: x.status, antesDeSalvar: pid => marcarTriado(x.chave, { acao: 'esteira', pid }), depois: () => { fecharModal(); toast(`${x.cliente} na esteira`); } }); });
   $$('[data-fin]', el).forEach(b => b.onclick = () => { const x = item(b.dataset.fin);
