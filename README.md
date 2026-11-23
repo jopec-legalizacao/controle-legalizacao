@@ -14,12 +14,12 @@ Dá para usar o **mesmo projeto** do app de certidões, porque as tabelas daqui 
 1. Supabase → **SQL Editor** → New query → cole todo o arquivo `supabase/schema.sql` → **Run**.
    - Se o e-mail do administrador não for `mateus.jopec@gmail.com`, troque na linha `insert into leg_admins` antes de rodar.
 2. Supabase → **Authentication → Users → Add user → Create new user**, marcando **Auto Confirm User**:
-   - **Administrador:** `mateus.jopec@gmail.com`, com a SUA senha (poder total).
-   - **Equipe:** `equipe.legalizacao@jopec.com.br`, com a senha que você vai passar para a equipe (só visualiza). Esse e-mail não precisa existir de verdade.
+   - **Administrador:** `mateus.jopec@gmail.com` (poder total). Já existe: é o mesmo login do app de certidões.
+   - **Chefes (só visualizam):** `jotapec2020@gmail.com` e `cristiano.jopec@gmail.com`, cada um com a sua senha.
 3. Supabase → **Project Settings → API**: copie a **Project URL** e a chave **anon public**.
 
 ### 2) Configurar o app
-Abra o arquivo `config.js` e preencha os campos `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `EMAIL_ADMIN` e `EMAIL_EQUIPE`.
+Abra o arquivo `config.js` e preencha `SUPABASE_URL`, `SUPABASE_ANON_KEY` e `EMAILS_ADMIN` (quem edita). Todo outro usuário do Supabase entra só para ver.
 
 ### 3) Publicar (GitHub + Vercel)
 1. GitHub (conta mateusjopec-byte) → **New repository** → nome `controle-legalizacao` → **Private** → Create.
@@ -47,7 +47,7 @@ Enquanto isso não estiver configurado, use o botão **Abrir no Gmail**: ele abr
 3. **Triagem da planilha** → decida as 38 pendências.
 
 ## Como funciona
-- **Dois perfis:** a Equipe só vê. O Administrador cria, edita, registra, pausa, finaliza e envia e-mails. A trava fica no banco (RLS), então não dá para burlar pela tela.
+- **Login por e-mail e senha:** cada pessoa entra com o próprio e-mail. Quem não é administrador só vê. O Administrador cria, edita, registra, pausa, finaliza e envia e-mails. A trava fica no banco (RLS), então não dá para burlar pela tela.
 - **Cardápio de etapas:** presets por serviço, com botão para carregar os sugeridos, criar, editar, duplicar e reordenar.
 - **Esteira por cliente:** escolha o preset, marque o que já foi feito, reordene, remova, junte etapas de outro preset ou pegue etapas avulsas do cardápio.
 - **Diário diário:** dia em que você não escrever nada mostra "Sem movimentação" ou repete o último status até você mudar. O padrão fica em Configurações e cada processo pode ter o seu próprio modo. Dá para contar só dias úteis ou todos os dias.

@@ -160,7 +160,7 @@ async function registrar(pid, texto, extra = {}) {
 }
 
 // ---------------------------------------------------------------- login
-function telaLogin(erro = '') {
+function telaLogin(erro = '', emailAnt = '') {
   document.body.className = '';
   const perfil = sessionStorage.getItem('leg_perfil_sel') || 'equipe';
   $('#app').innerHTML = `
@@ -168,26 +168,29 @@ function telaLogin(erro = '') {
     <img src="icons/icon.svg" width="52" height="52" alt="">
     <h1>Controle de Legalização</h1>
     <p>JOPEC Serviços Administrativos</p>
-    <div class="perfis">
+    ${MODO_DEMO ? `<div class="perfis">
       <button type="button" class="perfil ${perfil === 'equipe' ? 'on' : ''}" data-p="equipe"><b>👁 Equipe</b><span>Somente visualizar</span></button>
       <button type="button" class="perfil ${perfil === 'admin' ? 'on' : ''}" data-p="admin"><b>🔑 Administrador</b><span>Acesso total</span></button>
-    </div>
-    <div class="campo c6"><label>Senha</label><input type="password" id="senha" autocomplete="current-password" autofocus required></div>
+    </div>` : `<div class="campo c6" style="margin-bottom:12px"><label>E-mail</label><input type="email" id="email" autocomplete="username" required value="${h(emailAnt || localStorage.getItem('leg_ultimo_email') || '')}"></div>`}
+    <div class="campo c6"><label>Senha</label><input type="password" id="senha" autocomplete="current-password" required></div>
     ${erro ? `<div class="aviso vermelho" style="margin-top:12px">${h(erro)}</div>` : ''}
     <button class="btn pri" style="width:100%;justify-content:center;margin-top:16px;padding:11px">Entrar</button>
     ${MODO_DEMO ? `<div class="demo-aviso">Modo demonstração (Supabase ainda não configurado). Senhas: equipe = <b>${h(CFG.DEMO_SENHA_EQUIPE)}</b>, administrador = <b>${h(CFG.DEMO_SENHA_ADMIN)}</b>. Os dados ficam só neste navegador.</div>` : ''}
   </form></div>`;
   $$('.perfil').forEach(b => b.onclick = () => { sessionStorage.setItem('leg_perfil_sel', b.dataset.p); $$('.perfil').forEach(x => x.classList.toggle('on', x === b)); });
+  const foco = $('#email') && !$('#email').value ? $('#email') : $('#senha'); foco.focus();
   $('#f-login').onsubmit = async ev => {
     ev.preventDefault();
-    const p = $('.perfil.on').dataset.p, senha = $('#senha').value;
+    const senha = $('#senha').value;
     if (MODO_DEMO) {
+      const p = $('.perfil.on').dataset.p;
       if (senha !== (p === 'admin' ? CFG.DEMO_SENHA_ADMIN : CFG.DEMO_SENHA_EQUIPE)) return telaLogin('Senha incorreta.');
       sessionStorage.setItem('leg_demo_papel', p); return iniciar();
     }
-    const email = p === 'admin' ? CFG.EMAIL_ADMIN : CFG.EMAIL_EQUIPE;
+    const email = $('#email').value.trim().toLowerCase();
     const { error } = await sb.auth.signInWithPassword({ email, password: senha });
-    if (error) return telaLogin('Senha incorreta.');
+    if (error) return telaLogin('E-mail ou senha incorretos.', email);
+    localStorage.setItem('leg_ultimo_email', email);
     iniciar();
   };
 }
@@ -209,7 +212,7 @@ function render() {
     <aside class="side">
       <div class="marca"><img src="icons/icon.svg" alt=""><div><b>Legalização</b><small>JOPEC</small></div></div>
       ${NAV.map(([k, ic, nm]) => `<button class="nav ${S.view === k ? 'on' : ''} ${k === 'config' || k === 'triagem' ? 'adm' : ''}" data-v="${k}"><span class="ic">${ic}</span>${nm}${k === 'processos' ? `<span class="n">${nAnd}</span>` : ''}${k === 'triagem' && pendTriagem().length ? `<span class="n">${pendTriagem().length}</span>` : ''}</button>`).join('')}
-      <div class="side-rodape"><span class="papel">${admin() ? '🔑 Administrador' : '👁 Equipe (leitura)'}</span>${MODO_DEMO ? '<div>Modo demonstração</div>' : ''}<div><button class="btn sm ghost" style="color:#cfdbea;padding-left:0" id="b-sair">Sair</button></div></div>
+      <div class="side-rodape"><span class="papel">${admin() ? '🔑 Administrador' : '👁 Somente leitura'}</span>${S.email ? `<div style="word-break:break-all;margin-bottom:4px">${h(S.email)}</div>` : ''}${MODO_DEMO ? '<div>Modo demonstração</div>' : ''}<div><button class="btn sm ghost" style="color:#cfdbea;padding-left:0" id="b-sair">Sair</button></div></div>
     </aside>
     <main class="main" id="main"></main>
   </div>
@@ -842,7 +845,7 @@ async function iniciar() {
       const { data } = await sb.auth.getSession();
       if (!data.session) return telaLogin();
       S.email = data.session.user.email;
-      S.papel = S.email.toLowerCase() === (CFG.EMAIL_ADMIN || '').toLowerCase() ? 'admin' : 'equipe';
+      S.papel = (CFG.EMAILS_ADMIN || [CFG.EMAIL_ADMIN]).map(e => String(e).toLowerCase()).includes(S.email.toLowerCase()) ? 'admin' : 'equipe';
     }
     await carregar(); render();
   } catch (err) { console.error(err); $('#app').innerHTML = `<div class="vazio">Erro ao carregar: ${h(err.message || err)}<br><br><button class="btn" onclick="location.reload()">Tentar de novo</button></div>`; }
