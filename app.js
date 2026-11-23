@@ -953,7 +953,13 @@ function formAlerta(lista, titulo) {
     const b = $('#e-env'); b.disabled = true; b.textContent = 'Enviando…';
     try {
       const { data, error } = await sb.functions.invoke('enviar-alerta', { body: { para: $('#e-para').value, cc: $('#e-cc').value, assunto: $('#e-ass').value, texto: $('#e-txt').value, html: editado() ? `<pre style="font-family:Segoe UI,Arial;white-space:pre-wrap">${h($('#e-txt').value)}</pre>` : html } });
-      if (error || data?.erro) throw new Error(data?.erro || error.message);
+      if (error || data?.erro) {
+        let msg = data?.erro || error.message;
+        try { const corpo = await error?.context?.json(); if (corpo?.erro) msg = corpo.erro; } catch {}
+        if (/credentials|username and password|535|PLAIN|auth/i.test(msg)) msg = 'O Gmail recusou o login. Falta cadastrar (ou está errada) a senha de app do Gmail no Supabase: Edge Functions → Secrets → GMAIL_APP_PASSWORD.';
+        else if (/permiss/i.test(msg)) msg = 'Só o administrador pode enviar alertas.';
+        throw new Error(msg);
+      }
       fecharModal(); toast('E-mail enviado ✔');
     } catch (err) { b.disabled = false; b.textContent = 'Enviar automaticamente'; alert('Não foi possível enviar: ' + err.message + '\n\nUse "Abrir no Gmail" enquanto isso.'); }
   };
