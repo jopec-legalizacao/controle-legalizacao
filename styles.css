@@ -235,3 +235,6 @@ body.papel-equipe .adm{display:none !important}
 .frases .fr:hover{background:var(--azul-c);border-color:var(--azul)}
 .frases .fr-add{border:1px solid var(--borda);background:#fafafa;border-radius:20px;padding:3px 10px;font-size:12px;cursor:pointer;color:var(--sub)}
 .frases .fr-add.novo{background:var(--azul);border-color:var(--azul);color:#fff;font-weight:600}
+
+.btn-olho{border:0;background:none;cursor:pointer;font-size:14px;padding:0 2px;vertical-align:middle;opacity:.75}
+.btn-olho:hover{opacity:1}

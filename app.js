@@ -41,7 +41,11 @@ const hoje = () => isoLocal(new Date());
 const parseD = s => { const [y, m, d] = String(s).slice(0, 10).split('-').map(Number); return new Date(y, m - 1, d); };
 const fmtD = s => s ? parseD(s).toLocaleDateString('pt-BR') : '—';
 const DS = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
-const moeda = v => (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const moedaReal = v => (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const valoresOcultos = () => localStorage.getItem('leg_ocultar_valores') === '1';
+const moeda = v => valoresOcultos() ? 'R$ •••••' : moedaReal(v);
+const botaoOlho = () => `<button type="button" class="btn-olho" data-olho title="${valoresOcultos() ? 'Mostrar valores' : 'Esconder valores'}">${valoresOcultos() ? '🙈' : '👁'}</button>`;
+function ligarOlho(el) { $$('[data-olho]', el).forEach(b => b.onclick = ev => { ev.stopPropagation(); localStorage.setItem('leg_ocultar_valores', valoresOcultos() ? '0' : '1'); render(); }); }
 const fimDeSemana = d => d.getDay() === 0 || d.getDay() === 6;
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('on'), 2400); }
 function diasEntre(a, b, uteis) { // dias contados de a (exclusivo) até b (inclusivo)
@@ -271,7 +275,7 @@ function vPainel(el) {
     <div class="card kpi alerta" data-ir="andamento"><div class="v">${parados.length}</div><div class="l">Parados há ${S.config.alerta_dias}+ dias</div></div>
     <div class="card kpi atenc" data-ir="andamento"><div class="v">${and.filter(p => p.aguardando === 'cliente').length}</div><div class="l">Aguardando cliente</div></div>
     <div class="card kpi atenc" data-ir="pausado"><div class="v">${S.processos.filter(p => p.situacao === 'pausado').length}</div><div class="l">Pausados${pausaVencida.length ? ` · ${pausaVencida.length} para retomar` : ''}</div></div>
-    <div class="card kpi bom" data-rel="1"><div class="v">${fimMes.length}</div><div class="l">Finalizados no mês · ${moeda(fimMes.reduce((s, p) => s + (+p.gratificacao || 0), 0))}</div></div>
+    <div class="card kpi bom" data-rel="1"><div class="v">${fimMes.length}</div><div class="l">Finalizados no mês · ${moeda(fimMes.reduce((s, p) => s + (+p.gratificacao || 0), 0))} ${botaoOlho()}</div></div>
   </div>
   ${pausaVencida.length ? `<div class="aviso amarelo">⏰ Pausas com data de retomada vencida: ${pausaVencida.map(p => `<a href="#" data-proc="${p.id}">${h(p.cliente)}</a>`).join(', ')}</div>` : ''}
   <div class="secao"><h3>Rotina de hoje</h3><span class="dica">Escreva o status do dia. Se ficar em branco, o processo segue o modo dele (${S.config.modo_padrao === 'repetir' ? 'repete o último status' : 'fica sem movimentação'}).</span></div>
@@ -289,6 +293,7 @@ function vPainel(el) {
   ${parados.length ? `<div class="secao"><h3>⚠ Precisam de atenção</h3><span class="dica">Sem movimento real há ${S.config.alerta_dias} dias ou mais</span></div><div class="grade">${parados.map(cartao).join('')}</div>` : ''}`;
   $$('[data-ir]', el).forEach(k => k.onclick = () => { S.view = 'processos'; S.aba = k.dataset.ir; render(); });
   $$('[data-rel]', el).forEach(k => k.onclick = () => { S.view = 'relatorio'; render(); });
+  ligarOlho(el);
   $$('a[data-proc]', el).forEach(a => a.onclick = e => { e.preventDefault(); abrirDetalhe(a.dataset.proc); });
   ligarCartoes(el);
   const bn = $('#b-novo', el); if (bn) bn.onclick = () => formProcesso();
@@ -752,7 +757,7 @@ function vRelatorio(el) {
   el.innerHTML = `
   <div class="topo"><h2>Trabalhos finalizados</h2>
     <select id="mes" class="btn">${meses.map(m => `<option value="${m}" ${m === S.mesRel ? 'selected' : ''}>${nomeMes(m)}</option>`).join('')}</select>
-    <button class="btn" id="b-csv">⤓ Exportar CSV</button><button class="btn" onclick="window.print()">🖨 Imprimir</button></div>
+    <button class="btn" data-olho title="Esconder ou mostrar os valores">${valoresOcultos() ? '🙈 Mostrar valores' : '👁 Esconder valores'}</button><button class="btn" id="b-csv">⤓ Exportar CSV</button><button class="btn" onclick="window.print()">🖨 Imprimir</button></div>
   <div class="card" style="overflow:auto">
     <div style="padding:14px 16px;font-weight:700;text-transform:uppercase">Trabalhos finalizados em ${nomeMes(S.mesRel)}</div>
     <table class="tb"><thead><tr><th>#</th><th>Nome</th><th>Tipo de cliente</th><th>Serviço executado</th><th>Concluído</th><th class="num">Gratificação</th></tr></thead>
@@ -761,6 +766,7 @@ function vRelatorio(el) {
   </div>
   ${des.length ? `<div class="secao"><h3>Desistências no mês</h3></div><div class="card"><table class="tb"><tbody>${des.map(p => `<tr data-proc="${p.id}" style="cursor:pointer"><td>${h(p.cliente)}</td><td>${h(p.servico)}</td><td>${h(p.desistencia_motivo || '')}</td><td>${fmtD(p.data_conclusao)}</td></tr>`).join('')}</tbody></table></div>` : ''}`;
   $('#mes', el).onchange = e => { S.mesRel = e.target.value; render(); };
+  ligarOlho(el);
   $$('[data-proc]', el).forEach(r => r.onclick = () => abrirDetalhe(r.dataset.proc));
   $('#b-csv', el).onclick = () => {
     const linhas = [['Nome', 'Tipo de cliente', 'Serviço executado', 'Conclusão', 'Gratificação'], ...fin.map(p => [p.cliente, p.tipo_cliente, p.servico || '', fmtD(p.data_conclusao), (p.gratificacao ?? '').toString().replace('.', ',')]), ['TOTAL', '', '', '', tot.toFixed(2).replace('.', ',')]];
