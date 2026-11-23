@@ -462,6 +462,52 @@ function formFinalizar(p) {
     }, 'Processo finalizado')) abrirDetalhe(p.id); };
 }
 
+
+// ---------------------------------------------------------------- comparação de esteiras (evita presets duplicados)
+const normEt = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+const assinatura = etapas => (etapas || []).filter(e => (e.nome || '').trim()).map(e => normEt(e.nome)).join(' | ');
+const presetIgual = (etapas, ignorarId = null) => { const a = assinatura(etapas); return a ? S.presets.find(x => x.id !== ignorarId && assinatura(x.etapas) === a) : null; };
+function diffEtapas(base, nova) {
+  const b = (base || []).map(e => normEt(e.nome)), n = nova.map(e => normEt(e.nome));
+  const add = nova.filter(e => !b.includes(normEt(e.nome))).map(e => e.nome);
+  const rem = (base || []).filter(e => !n.includes(normEt(e.nome))).map(e => e.nome);
+  const ordem = !add.length && !rem.length && b.join('|') !== n.join('|');
+  return { add, rem, ordem };
+}
+// Pergunta se a esteira modificada vira um preset novo. Resolve {acao:'novo', id} | {acao:'usar', id} | {acao:'nao'}
+function perguntarNovoPreset(lista, base, { forcar = false, cliente = '' } = {}) {
+  return new Promise(resolve => {
+    const igual = presetIgual(lista);
+    const d = base ? diffEtapas(base.etapas, lista) : null;
+    modal(`<div class="cab"><div style="flex:1"><h3>${forcar ? '💾 Salvar esteira como preset' : '✨ Esta esteira ficou diferente do preset'}</h3>
+      <div class="sub">${base ? `Preset escolhido: <b>${h(base.nome)}</b> — ele não será alterado.` : 'Nenhum preset escolhido.'}</div></div><button class="btn ghost" data-fechar>✕</button></div>
+    <div class="corpo">
+      ${d ? `<div class="aviso azul">${[d.add.length ? `➕ Adicionadas: ${d.add.map(h).join(', ')}` : '', d.rem.length ? `➖ Removidas: ${d.rem.map(h).join(', ')}` : '', d.ordem ? '↕ Ordem das etapas mudou' : ''].filter(Boolean).join('<br>') || 'Nomes ou prazos alterados.'}</div>` : ''}
+      ${igual ? `<div class="aviso amarelo">Essa esteira é <b>igual</b> ao preset <b>${h(igual.nome)}</b> (mesmas etapas, mesma ordem). Para não duplicar, use esse preset.</div>` : `
+      <div class="form"><div class="campo c6"><label>Nome do novo preset</label><input id="np-nome" placeholder="Ex.: Alteração Contratual RCPJ - Sócio" value="${h(base ? base.nome + ' (variação)' : '')}"></div></div>
+      <ol style="font-size:13px;color:#384556;margin:12px 0 0">${lista.map(e => `<li>${h(e.nome)}${e.prazo ? ` <small style="color:var(--sub)">· ${h(e.prazo)}</small>` : ''}</li>`).join('')}</ol>`}
+    </div>
+    <div class="rod">
+      <button class="btn" id="np-nao">${forcar ? 'Cancelar' : 'Não, só salvar o processo'}</button>
+      ${igual ? `<button class="btn pri" id="np-usar">Usar o preset "${h(igual.nome)}"</button>` : `<button class="btn pri" id="np-criar">Criar novo preset</button>`}
+    </div>`, 'lg', 2);
+    const fim = r => { fecharModal(2); resolve(r); };
+    $$('#modal-root2 [data-fechar]').forEach(b => b.onclick = () => fim({ acao: 'nao' }));
+    $('#np-nao').onclick = () => fim({ acao: 'nao' });
+    const bu = $('#np-usar'); if (bu) bu.onclick = () => fim({ acao: 'usar', id: igual.id });
+    const bc = $('#np-criar'); if (bc) bc.onclick = async () => {
+      const nome = $('#np-nome').value.trim(); if (!nome) { $('#np-nome').focus(); return toast('Dê um nome ao preset'); }
+      if (S.presets.some(x => normEt(x.nome) === normEt(nome))) return toast('Já existe um preset com esse nome');
+      const id = uid();
+      try {
+        await DB.ins(T.presets, { id, nome, cor: base?.cor || '#a23133', descricao: cliente ? `Criado a partir da esteira de ${cliente}` : null, ordem: S.presets.length, etapas: lista.map(e => ({ nome: e.nome.trim(), descricao: e.descricao || '', prazo: e.prazo || '' })), criado_em: new Date().toISOString() });
+        S.presets.push({ id, nome, cor: base?.cor || '#a23133', etapas: lista.map(e => ({ nome: e.nome.trim(), descricao: e.descricao || '', prazo: e.prazo || '' })) });
+        toast(`Preset "${nome}" criado`); fim({ acao: 'novo', id });
+      } catch (err) { alert('Não foi possível criar o preset: ' + (err.message || err)); }
+    };
+  });
+}
+
 // ---------------------------------------------------------------- formulário de processo (novo / editar)
 async function formProcesso(p = null, opts = {}) {
   // sempre busca o cardápio atualizado antes de abrir (e semeia os sugeridos se estiver vazio)
@@ -521,6 +567,7 @@ async function formProcesso(p = null, opts = {}) {
         <div class="mv"><button class="btn sm ghost aqui" data-aqui="${i}" title="O processo está nesta etapa agora">📍</button><button class="btn sm ghost" data-up="${i}" title="Subir">↑</button><button class="btn sm ghost" data-dn="${i}" title="Descer">↓</button><button class="btn sm ghost" data-rm="${i}" title="Remover">✕</button></div>
       </div>`).join('') : '<div class="vazio" style="padding:18px">Escolha um preset e clique em "Carregar etapas", ou adicione etapas abaixo.</div>') + `
       <div class="ed-barra"><button class="btn sm" id="b-add" type="button">＋ Etapa em branco</button>
+        <button class="btn sm" id="b-salvapreset" type="button" title="Guardar esta esteira no cardápio como um preset novo">💾 Salvar como preset</button>
         <select id="s-add" class="btn sm" style="max-width:280px"><option value="">＋ Adicionar etapa do cardápio…</option>${todasEtapasCardapio.map((e, i) => `<option value="${i}">${h(e.nome)}</option>`).join('')}</select>
         <select id="s-junta" class="btn sm" style="max-width:280px"><option value="">⊕ Juntar etapas de outro preset…</option>${S.presets.map(x => `<option value="${x.id}">${h(x.nome)}</option>`).join('')}</select></div>`;
     $$('#ed-etapas [data-k]').forEach(inp => inp.oninput = inp.onchange = () => { etapas[+inp.dataset.i][inp.dataset.k] = inp.value; if (inp.dataset.k === 'status') { const e = etapas[+inp.dataset.i]; if (inp.value === 'concluida' && !e.concluida_em) e.concluida_em = hoje(); desenha(); } });
@@ -529,6 +576,11 @@ async function formProcesso(p = null, opts = {}) {
     $$('#ed-etapas [data-dn]').forEach(b => b.onclick = () => { const i = +b.dataset.dn; if (i < etapas.length - 1) [etapas[i + 1], etapas[i]] = [etapas[i], etapas[i + 1]]; desenha(); });
     $$('#ed-etapas [data-rm]').forEach(b => b.onclick = () => { etapas.splice(+b.dataset.rm, 1); desenha(); });
     $('#b-add').onclick = () => { etapas.push({ nome: '', status: 'pendente' }); desenha(); $$('#ed-etapas [data-k="nome"]').at(-1).focus(); };
+    $('#b-salvapreset').onclick = async () => {
+      const lista = etapas.filter(e => e.nome.trim()); if (lista.length < 2) return toast('Monte pelo menos 2 etapas');
+      const r = await perguntarNovoPreset(lista, S.presets.find(x => x.id === $('#f-preset').value), { forcar: true, cliente: $('#f-cliente').value.trim() });
+      if (r.acao !== 'nao') atualizarSelectPreset(r.id);
+    };
     $('#s-add').onchange = ev => { const e = todasEtapasCardapio[+ev.target.value]; if (e) { etapas.push({ nome: e.nome, descricao: e.descricao, prazo: e.prazo, status: 'pendente' }); desenha(); } };
     $('#s-junta').onchange = ev => { const pr = S.presets.find(x => x.id === ev.target.value); if (pr) { const nomes = new Set(etapas.map(e => e.nome)); (pr.etapas || []).forEach(e => { if (!nomes.has(e.nome)) etapas.push({ nome: e.nome, descricao: e.descricao, prazo: e.prazo, status: 'pendente' }); }); desenha(); toast('Etapas juntadas (sem repetir as que já existiam)'); } };
   };
@@ -541,6 +593,7 @@ async function formProcesso(p = null, opts = {}) {
     desenha();
   };
   $('#f-preset').onchange = () => { if (!etapas.length) $('#b-aplicar').click(); };
+  const atualizarSelectPreset = sel => { $('#f-preset').innerHTML = `<option value="">— escolher preset —</option>` + S.presets.map(x => `<option value="${x.id}">${h(x.nome)} (${(x.etapas || []).length} etapas)</option>`).join(''); $('#f-preset').value = sel || ''; };
   $('#b-novopreset').onclick = () => formPreset(null, novoId => {
     $('#f-preset').innerHTML = `<option value="">— escolher preset —</option>` + S.presets.map(x => `<option value="${x.id}">${h(x.nome)} (${(x.etapas || []).length} etapas)</option>`).join('');
     $('#f-preset').value = novoId; desenha();
@@ -550,10 +603,19 @@ async function formProcesso(p = null, opts = {}) {
     const cliente = $('#f-cliente').value.trim(); if (!cliente) { $('#f-cliente').focus(); return toast('Informe o cliente'); }
     const lista = etapas.filter(e => e.nome.trim());
     if (lista.length && !lista.some(e => e.status === 'andamento')) { const pe = lista.find(e => e.status === 'pendente'); if (pe && $('#f-sit').value === 'andamento') pe.status = 'andamento'; }
+    // ✨ esteira diferente do preset escolhido? sugere criar um preset novo (sem mexer no original)
+    let presetFinal = $('#f-preset').value || null;
+    const base = S.presets.find(x => x.id === presetFinal);
+    const chaveNP = 'leg_np_' + (novo ? 'novo' : p.id);
+    if (lista.length >= 2 && assinatura(lista) !== assinatura(base?.etapas) && localStorage.getItem(chaveNP) !== assinatura(lista)) {
+      const r = await perguntarNovoPreset(lista, base, { cliente });
+      if (r.acao === 'nao') { if (!novo) localStorage.setItem(chaveNP, assinatura(lista)); }
+      else presetFinal = r.id;
+    }
     const num = v => v === '' ? null : +v;
     const dados = {
       cliente, tipo_cliente: $('#f-tipo').value, cnpj: $('#f-cnpj').value.trim() || null, servico: $('#f-serv').value.trim() || null,
-      preset_id: $('#f-preset').value || null, situacao: $('#f-sit').value, aguardando: $('#f-ag').value, prioridade: $('#f-pri').value,
+      preset_id: presetFinal, situacao: $('#f-sit').value, aguardando: $('#f-ag').value, prioridade: $('#f-pri').value,
       responsavel: $('#f-resp').value.trim() || null, contato: $('#f-cont').value.trim() || null, modo_diario: $('#f-modo').value,
       data_inicio: $('#f-ini').value || hoje(), previsao: $('#f-prev').value || null, data_conclusao: $('#f-conc').value || null,
       honorarios: num($('#f-hon').value), gratificacao: num($('#f-grat').value), observacoes: $('#f-obs').value.trim() || null, atualizado_em: new Date().toISOString(),
@@ -601,14 +663,17 @@ function carregarSugeridos() {
 }
 function formPreset(x = null, aoSalvar = null) {
   const novo = !x || !x.id; x = x || { nome: '', cor: '#1f6feb', etapas: [] }; const L = aoSalvar ? 2 : 1; const R = L === 2 ? '#modal-root2 ' : '#modal-root ';
-  let etapas = (x.etapas || []).map(e => ({ ...e }));
+  let etapas = (x.etapas || []).map(e => ({ ...e })); let aposDesenhar = () => {};
   modal(`<div class="cab"><h3>${novo ? 'Novo preset' : 'Editar preset'}</h3><button class="btn ghost" data-fechar>✕</button></div>
   <div class="corpo"><div class="form">
     <div class="campo c4"><label>Nome do serviço *</label><input id="p-nome" value="${h(x.nome)}" placeholder="Ex.: Alteração de Endereço"></div>
     <div class="campo c2"><label>Cor</label><input type="color" id="p-cor" value="${h(x.cor || '#1f6feb')}" style="height:40px;padding:3px"></div>
     <div class="campo c6"><label>Descrição</label><input id="p-desc" value="${h(x.descricao || '')}"></div>
+    ${novo ? `<div class="campo c6"><label>Começar a partir de outro preset (esqueleto)</label>
+      <select id="p-base"><option value="">— começar do zero —</option>${S.presets.map(y => `<option value="${y.id}">${h(y.nome)} (${(y.etapas || []).length} etapas)</option>`).join('')}</select>
+      <span class="ajuda">Copia as etapas do preset escolhido para você só ajustar. O preset original não muda.</span></div>` : ''}
   </div>
-  <div class="secao"><h3>Etapas (na ordem em que são feitas)</h3></div>
+  <div class="secao"><h3>Etapas (na ordem em que são feitas)</h3><span class="dica" id="p-dup"></span></div>
   <div class="ed-etapas" id="ed-p"></div></div>
   <div class="rod"><button class="btn" data-fechar>Cancelar</button><button class="btn pri" id="bp-salvar">Salvar preset</button></div>`, 'lg', L);
   const desenha = () => {
@@ -623,10 +688,24 @@ function formPreset(x = null, aoSalvar = null) {
     $$(R + '#ed-p [data-dn]').forEach(b => b.onclick = () => { const i = +b.dataset.dn; if (i < etapas.length - 1) [etapas[i + 1], etapas[i]] = [etapas[i], etapas[i + 1]]; desenha(); });
     $$(R + '#ed-p [data-rm]').forEach(b => b.onclick = () => { etapas.splice(+b.dataset.rm, 1); desenha(); });
     $(R + '#b-add').onclick = () => { etapas.push({ nome: '', descricao: '', prazo: '' }); desenha(); $$(R + '#ed-p [data-k="nome"]').at(-1).focus(); };
+    aposDesenhar();
   };
-  desenha();
+  const checaDup = () => { const el = $(R + '#p-dup'); if (!el) return; const ig = presetIgual(etapas, novo ? null : x.id); el.innerHTML = ig ? `<span class="chip amarelo">⚠ Igual ao preset "${h(ig.nome)}"</span>` : ''; };
+  aposDesenhar = () => { checaDup(); $$(R + '#ed-p [data-k="nome"]').forEach(i => i.addEventListener('input', checaDup)); };
+  const desenha2 = desenha;
+  desenha2();
+  const pb = $(R + '#p-base'); if (pb) pb.onchange = () => {
+    const y = S.presets.find(z => z.id === pb.value); if (!y) return;
+    if (etapas.some(e => e.nome.trim()) && !confirm('Substituir as etapas atuais pelas do preset escolhido?')) { pb.value = ''; return; }
+    etapas = (y.etapas || []).map(e => ({ ...e })); if (!$(R + '#p-cor').dataset.mexeu) $(R + '#p-cor').value = y.cor || '#a23133';
+    desenha2(); toast('Esqueleto carregado: agora é só ajustar');
+  };
+  $(R + '#p-cor').oninput = e => e.target.dataset.mexeu = '1';
   $(R + '#bp-salvar').onclick = async () => {
     const nome = $(R + '#p-nome').value.trim(); if (!nome) return toast('Informe o nome do serviço');
+    if (S.presets.some(y => y.id !== x.id && normEt(y.nome) === normEt(nome))) return toast('Já existe um preset com esse nome');
+    const ig = presetIgual(etapas, novo ? null : x.id);
+    if (ig && !confirm(`O preset "${ig.nome}" já tem exatamente essas etapas, na mesma ordem.\n\nSalvar mesmo assim (vai ficar duplicado)?`)) return;
     const dados = { nome, cor: $(R + '#p-cor').value, descricao: $(R + '#p-desc').value.trim() || null, etapas: etapas.filter(e => e.nome.trim()).map(e => ({ nome: e.nome.trim(), descricao: e.descricao || '', prazo: e.prazo || '' })) };
     const nid = novo ? uid() : x.id;
     if (await acao(() => novo ? DB.ins(T.presets, { id: nid, ...dados, ordem: S.presets.length, criado_em: new Date().toISOString() }) : DB.upd(T.presets, x.id, dados), 'Preset salvo')) { fecharModal(L); if (aoSalvar) aoSalvar(nid); }
@@ -682,6 +761,8 @@ function vConfig(el) {
     </div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px"><button class="btn pri" id="c-salvar">Salvar configurações</button></div>
   </div>
+  <div class="secao"><h3>🔗 Link público (sem senha)</h3><span class="dica">Quem tiver o link vê o andamento e as esteiras (em andamento, pausados, finalizados e desistências), sem poder mudar nada. Valores, contatos e observações não aparecem.</span></div>
+  <div class="card" style="padding:18px;max-width:820px" id="c-link">Carregando…</div>
   <div class="secao"><h3>Dados</h3></div>
   <div class="card" style="padding:18px;max-width:820px;display:flex;gap:8px;flex-wrap:wrap">
     <button class="btn" id="c-bkp">⤓ Baixar backup (JSON)</button>
@@ -693,6 +774,7 @@ function vConfig(el) {
     email_para: $('#c-para').value.trim(), email_cc: $('#c-cc').value.trim(), email_remetente: $('#c-rem').value.trim(),
     responsaveis: $('#c-resp').value.split('\n').map(s => s.trim()).filter(Boolean), frases: $('#c-fr').value.split('\n').map(s => s.trim()).filter(Boolean),
   }), 'Configurações salvas');
+  desenharLinkPublico();
   $('#c-bkp', el).onclick = () => baixar(`legalizacao-backup-${hoje()}.json`, JSON.stringify({ presets: S.presets, processos: S.processos, etapas: S.etapas, atualizacoes: S.atual, config: S.config }, null, 1), 'application/json');
   $('#c-sug', el).onclick = carregarSugeridos;
   $('#c-rest', el).onchange = async ev => {
@@ -847,6 +929,86 @@ function formAlerta(lista, titulo) {
   };
 }
 
+
+// ---------------------------------------------------------------- link público
+const urlPublica = t => `${location.origin}${location.pathname}?p=${encodeURIComponent(t)}`;
+async function desenharLinkPublico() {
+  const box = $('#c-link'); if (!box) return;
+  let ativo = null;
+  try { ativo = MODO_DEMO ? (DB.demo().leg_link_publico || []).find(r => r.ativo) : ((await sb.from('leg_link_publico').select('*').eq('ativo', true).limit(1)).data || [])[0]; } catch (e) { console.warn(e); }
+  box.innerHTML = ativo ? `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <input class="busca" style="max-width:none;flex:1" readonly value="${h(urlPublica(ativo.token))}" id="lk-url">
+      <button class="btn pri" id="lk-copiar">Copiar link</button><a class="btn" href="${h(urlPublica(ativo.token))}" target="_blank">Abrir</a></div>
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="btn" id="lk-novo">↻ Gerar link novo (o atual para de funcionar)</button><button class="btn dang" id="lk-off">Desativar link</button></div>`
+    : `<p style="margin-top:0">Nenhum link público ativo.</p><button class="btn pri" id="lk-novo">Gerar link público</button>`;
+  const novoToken = () => [...crypto.getRandomValues(new Uint8Array(18))].map(b => 'abcdefghijkmnpqrstuvwxyz23456789'[b % 32]).join('');
+  const salvar = async (fn) => { try { await fn(); desenharLinkPublico(); } catch (e) { alert('Não foi possível: ' + (e.message || e)); } };
+  const bc = $('#lk-copiar'); if (bc) bc.onclick = async () => { try { await navigator.clipboard.writeText($('#lk-url').value); toast('Link copiado'); } catch { $('#lk-url').select(); document.execCommand('copy'); toast('Link copiado'); } };
+  $('#lk-novo').onclick = () => salvar(async () => {
+    const t = novoToken();
+    if (MODO_DEMO) { const db = DB.demo(); db.leg_link_publico = [{ token: t, ativo: true }]; DB.salvaDemo(db); return; }
+    await sb.from('leg_link_publico').update({ ativo: false }).eq('ativo', true);
+    const { error } = await sb.from('leg_link_publico').insert({ token: t, ativo: true }); if (error) throw error;
+    toast('Link novo gerado');
+  });
+  const bo = $('#lk-off'); if (bo) bo.onclick = () => { if (confirm('Desativar o link público? Quem tiver o link não verá mais nada.')) salvar(async () => {
+    if (MODO_DEMO) { const db = DB.demo(); db.leg_link_publico = []; DB.salvaDemo(db); return; }
+    const { error } = await sb.from('leg_link_publico').update({ ativo: false }).eq('ativo', true); if (error) throw error; toast('Link desativado'); }); };
+}
+
+// Página pública (somente leitura, sem login): ?p=TOKEN
+async function telaPublica(token) {
+  document.body.className = 'publico';
+  $('#app').innerHTML = `<div class="carregando">Carregando andamento…</div>`;
+  let dados = null;
+  try {
+    if (MODO_DEMO) {
+      const db = DB.demo(); if (!(db.leg_link_publico || []).some(r => r.ativo && r.token === token)) throw new Error('x');
+      const et = db[T.etapas] || [], at = db[T.atual] || [];
+      dados = { gerado: new Date().toISOString(), processos: (db[T.processos] || []).filter(p => ['andamento', 'pausado', 'finalizado', 'desistencia'].includes(p.situacao)).map(p => ({ ...p,
+        etapas: et.filter(e => e.processo_id === p.id).sort((a, b) => a.ordem - b.ordem), ultimo: at.filter(a => a.processo_id === p.id && a.tipo !== 'sistema').sort((a, b) => (b.data + b.criado_em).localeCompare(a.data + a.criado_em))[0] || null })) };
+    } else {
+      const { data, error } = await sb.rpc('leg_painel_publico', { p_token: token }); if (error) throw error; dados = data;
+    }
+  } catch (e) { console.warn(e); }
+  if (!dados) { $('#app').innerHTML = `<div class="login"><div class="login-box" style="text-align:center"><h1 style="font-family:var(--f-display)">Link inválido ou desativado</h1><p>Peça um link novo ao Departamento de Legalização da JOPEC.</p></div></div>`; return; }
+  const PS = { aba: 'andamento', busca: '' };
+  const lista = dados.processos || [];
+  const desenhar = () => {
+    const q = normEt(PS.busca);
+    const vis = lista.filter(p => p.situacao === PS.aba && (!q || normEt(p.cliente + ' ' + (p.servico || '')).includes(q)))
+      .sort((a, b) => PS.aba === 'andamento' ? a.cliente.localeCompare(b.cliente) : (b.data_conclusao || '').localeCompare(a.data_conclusao || ''));
+    const abas = ['andamento', 'pausado', 'finalizado', 'desistencia'];
+    $('#app').innerHTML = `
+    <div class="shell"><header class="band"><div class="wrap topbar"><div class="brand">${LOGO_MARCA}<div>${LOGO_NOME}<h1>Legalização · Andamento dos processos</h1></div></div>
+      <div class="usr"><span class="papel">👁 Somente leitura</span></div></div></header>
+    <main class="main wrap">
+      <div class="topo"><h2>Andamento dos processos</h2><input class="busca" id="pb" placeholder="Buscar empresa ou serviço…" value="${h(PS.busca)}">
+        <div class="sub">Atualizado em ${new Date(dados.gerado).toLocaleString('pt-BR')} · atualize a página para ver as últimas mudanças</div></div>
+      <div class="tabs">${abas.map(k => `<button class="tab ${PS.aba === k ? 'on' : ''}" data-pa="${k}">${SITUACOES[k].ic} ${SITUACOES[k].nome}<span class="n">${lista.filter(p => p.situacao === k).length}</span></button>`).join('')}</div>
+      ${vis.length ? `<div style="display:flex;flex-direction:column;gap:12px">${vis.map(p => {
+        const es = (p.etapas || []).filter(e => e.status !== 'dispensada'); const ok = es.filter(e => e.status === 'concluida').length;
+        const at = es.find(e => e.status === 'andamento') || es.find(e => e.status === 'pendente');
+        const pct = es.length ? Math.round(ok / es.length * 100) : 0;
+        return `<div class="card" style="padding:16px 18px;border-left:4px solid var(--navy)">
+          <div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap"><div style="flex:1;min-width:200px"><div class="nome" style="font:700 16px var(--f-display)">${h(p.cliente)}</div><div style="color:var(--sub);font-size:13px">${h(p.servico || '')}</div></div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap"><span class="chip">${h(p.tipo_cliente || '')}</span>${p.situacao === 'andamento' ? `<span class="chip">${h(AGUARDANDO[p.aguardando] || '')}</span>` : ''}
+            ${p.situacao === 'finalizado' ? `<span class="chip verde">finalizado ${fmtD(p.data_conclusao)}</span>` : ''}${p.situacao === 'desistencia' ? `<span class="chip vermelho">desistência ${fmtD(p.data_conclusao)}</span>` : ''}
+            ${p.situacao === 'pausado' ? `<span class="chip amarelo">pausado${p.retomar_em ? ' · retomar ' + fmtD(p.retomar_em) : ''}</span>` : ''}</div></div>
+          ${es.length ? `<div class="etapa-atual" style="margin-top:10px"><span>${p.situacao === 'andamento' && at ? `Etapa ${es.indexOf(at) + 1}/${es.length}: <b>${h(at.nome)}</b>` : `${ok}/${es.length} etapas concluídas`}</span><span>${pct}%</span></div><div class="barra" style="margin-top:4px"><div style="width:${pct}%"></div></div>
+          <div class="esteira" style="margin-top:8px">${es.map((e, i) => `<div class="passo ${e.status}"><div class="bola">${e.status === 'concluida' ? '✓' : i + 1}</div><div class="nm">${h(e.nome)}</div><div class="dt">${e.status === 'concluida' ? fmtD(e.concluida_em) : e.status === 'andamento' ? 'em andamento' : (e.prazo || '')}</div></div>`).join('')}</div>` : ''}
+          ${p.situacao === 'pausado' && p.pausa_motivo ? `<div class="aviso amarelo" style="margin:8px 0 0">⏸ ${h(p.pausa_motivo)}</div>` : ''}
+          ${p.situacao === 'desistencia' && p.desistencia_motivo ? `<div class="aviso vermelho" style="margin:8px 0 0">✕ ${h(p.desistencia_motivo)}</div>` : ''}
+          ${p.ultimo ? `<div class="status" style="margin-top:8px;font-size:13px;background:var(--bg);padding:8px 10px;border-radius:10px">Último status (${fmtD(p.ultimo.data)}): <b>${h(p.ultimo.texto)}</b></div>` : ''}
+        </div>`; }).join('')}</div>` : '<div class="card vazio">Nada por aqui.</div>'}
+    </main></div>`;
+    $$('[data-pa]').forEach(b => b.onclick = () => { PS.aba = b.dataset.pa; desenhar(); });
+    const pb = $('#pb'); pb.oninput = () => { PS.busca = pb.value; const pos = pb.selectionStart; desenhar(); const n = $('#pb'); n.focus(); n.setSelectionRange(pos, pos); };
+  };
+  desenhar();
+}
+
 // ---------------------------------------------------------------- modal
 function modal(html, cls = '', camada = 1) {
   const R = camada === 2 ? '#modal-root2' : '#modal-root';
@@ -872,6 +1034,11 @@ async function iniciar() {
     await carregar(); render();
   } catch (err) { console.error(err); $('#app').innerHTML = `<div class="vazio">Erro ao carregar: ${h(err.message || err)}<br><br><button class="btn" onclick="location.reload()">Tentar de novo</button></div>`; }
 }
-(async () => { await DB.init(); iniciar(); })();
+(async () => {
+  await DB.init();
+  const tk = new URLSearchParams(location.search).get('p');
+  if (tk) return telaPublica(tk);
+  iniciar();
+})();
 // atualiza sozinho a cada 5 min (para quem deixa aberto o dia todo)
-setInterval(async () => { if (S.papel && !$('#modal-root').innerHTML) { await carregar(); render(); } }, 5 * 60 * 1000);
+setInterval(async () => { if (S.papel && !document.body.classList.contains('publico') && !$('#modal-root').innerHTML) { await carregar(); render(); } }, 5 * 60 * 1000);

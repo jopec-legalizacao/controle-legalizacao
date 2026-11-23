@@ -55,4 +55,7 @@ Enquanto isso não estiver configurado, use o botão **Abrir no Gmail**: ele abr
 - **Situações:** Em andamento, ⏸ Pausados (motivo + lembrete de retomada), ✔ Finalizados, ✕ Desistências (motivo) e Arquivados.
 - **Relatório mensal:** finalizados do mês com gratificação e total, exportação em CSV e impressão. Em Processos tem o botão **Controle para os chefes**, que imprime a lista em andamento.
 - **Triagem da planilha** (menu só do administrador): lista as 38 pendências abertas da aba "controle para os chefes". Para cada uma há um botão: ✔ Já finalizado, ▶ Montar esteira (escolhe o preset, junta outros, cria preset novo na hora e marca com 📍 onde o processo está), ⏸ Pausado, ✕ Desistiu ou Ignorar. Tudo pode ser desfeito. O menu some quando não sobra nada para decidir.
+- **Preset inteligente:** se você mudar a esteira de um cliente em relação ao preset escolhido, o app mostra o que mudou e oferece salvar como preset novo (o original não muda). Se a esteira for igual à de outro preset, ele sugere usar esse em vez de duplicar. Também há o botão "💾 Salvar como preset" na esteira.
+- **Novo preset a partir de esqueleto:** ao criar um preset, escolha outro como base e só ajuste as etapas.
+- **Link público (sem senha):** em Configurações → Link público. Mostra só o andamento e as esteiras (em andamento, pausados, finalizados, desistências), sem valores, contatos ou observações. Pode gerar um link novo ou desativar a qualquer momento. Requer o SQL `supabase/link_publico.sql`.
 - **Backup:** em Configurações você baixa e restaura os dados em JSON.
