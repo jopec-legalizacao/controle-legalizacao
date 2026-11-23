@@ -238,3 +238,73 @@ body.papel-equipe .adm{display:none !important}
 
 .btn-olho{border:0;background:none;cursor:pointer;font-size:14px;padding:0 2px;vertical-align:middle;opacity:.75}
 .btn-olho:hover{opacity:1}
+
+/* =================== CELULAR (revisão completa) =================== */
+@media (max-width:860px){
+  input,select,textarea{font-size:16px !important}            /* evita zoom automático no iPhone */
+  .btn{min-height:40px}
+  .btn.sm{min-height:34px}
+  .topo{gap:8px;margin-bottom:12px}
+  .topo h2{font-size:21px;flex:1 1 auto}
+  .topo .busca{order:5;flex:1 1 100%;max-width:none;min-width:0}
+  .topo .btn{flex:0 0 auto}
+  .tabs{flex-wrap:nowrap;overflow-x:auto;margin:0 -14px 12px;padding:0 14px 4px;scrollbar-width:none}
+  .tabs::-webkit-scrollbar{display:none}
+  .tab{flex:0 0 auto}
+  .kpis{grid-template-columns:1fr 1fr;gap:8px}
+  .kpis .kpi:last-child:nth-child(odd){grid-column:span 2}
+  .kpi{padding:10px 12px}.kpi .v{font-size:24px}
+  .band{position:sticky}
+  .topbar{padding-top:8px;padding-bottom:8px}
+  /* janelas viram tela cheia, com cabeçalho e botões sempre à mão */
+  .fundo{padding:0;display:block}
+  .modal,.modal.lg{max-width:none;min-height:100%;border-radius:0;display:flex;flex-direction:column}
+  .linha-preset{flex-wrap:wrap}
+  .linha-preset select{flex:1 1 100% !important}
+  .linha-preset .btn{flex:1 1 calc(50% - 3px);justify-content:center}
+  .modal .cab{position:sticky;top:0;background:#fff;z-index:2;padding:14px 16px}
+  .modal .cab h3{font-size:17px}
+  .modal .corpo{padding:14px 16px;flex:1}
+  .modal .rod{position:sticky;bottom:0;z-index:2;border-radius:0;padding:10px 12px calc(10px + env(safe-area-inset-bottom));gap:6px;box-shadow:0 -6px 16px rgb(60 20 22 / .08)}
+  .modal .rod .btn{flex:1 1 auto;justify-content:center}
+  .modal .rod #b-excluir{flex:0 0 auto}
+  .detalhe-grid{gap:12px}
+  /* esteira na vertical: fácil de ler e de tocar */
+  .esteira{flex-direction:column;overflow:visible;padding:4px 0}
+  .passo{display:grid;grid-template-columns:34px 1fr;column-gap:12px;text-align:left;padding:0 0 14px;min-width:0}
+  .passo::before{top:-14px;left:15px;width:3px;height:30px}
+  .passo:first-child::before{display:none}
+  .passo .bola{grid-row:span 2;margin:0}
+  .passo .nm{font-size:14px;align-self:end}
+  .passo .dt{align-self:start}
+  /* diário */
+  .dia{grid-template-columns:64px 1fr;gap:8px}
+  /* rotina do dia */
+  .rotina-linha{gap:6px;padding:12px}
+  /* editor de esteira */
+  .ed-et,.ed-et.preset-ed{grid-template-columns:22px 1fr;row-gap:6px;padding:10px 8px}
+  .ed-et .opc,.ed-et input,.ed-et select{grid-column:2}
+  .ed-et .mv{grid-column:2;justify-content:flex-end}
+  .ed-et .mv .btn{min-width:38px;justify-content:center}
+  .ed-barra .btn,.ed-barra select{flex:1 1 100%}
+  /* relatório: tabela vira cartões */
+  table.tb thead{display:none}
+  table.tb,table.tb tbody,table.tb tr,table.tb td,table.tb tfoot{display:block;width:100%}
+  table.tb tbody tr{padding:10px 12px;border-bottom:1px solid var(--cinza-c)}
+  table.tb td{border:0;padding:1px 0}
+  table.tb td:first-child:not([colspan]){display:none}
+  table.tb td.num{text-align:left;font-weight:700;color:var(--navy)}
+  table.tb tfoot tr{display:flex;justify-content:space-between;padding:10px 12px}
+  table.tb tfoot td{width:auto}
+  /* barra inferior */
+  .mobnav button{font-size:10px;min-height:50px}
+  .mobnav .ic{font-size:19px}
+  #toast{bottom:calc(76px + env(safe-area-inset-bottom));max-width:calc(100% - 32px);text-align:center}
+  .menu-pop{left:12px !important;right:12px;min-width:0}
+  .grade{gap:10px}
+  .proc{padding:12px 14px}
+  .tri{padding:12px}
+  .tri .bts .btn{flex:1 1 calc(50% - 6px);justify-content:center}
+  .frases{max-height:150px}
+}
+@media (max-width:380px){ .mobnav button{font-size:9px} .topo h2{font-size:19px} }

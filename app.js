@@ -230,7 +230,7 @@ function render() {
     </header>
     <main class="main wrap" id="main"></main>
   </div>
-  <nav class="mobnav">${NAV.filter(n => admin() || !['config', 'triagem'].includes(n[0])).filter(n => n[0] !== 'triagem' || pendTriagem().length).map(([k, ic, nm]) => `<button class="${S.view === k ? 'on' : ''}" data-v="${k}"><span class="ic">${ic}</span>${nm.split(' ')[0]}</button>`).join('')}</nav>`;
+  <nav class="mobnav">${NAV.filter(n => admin() || !['config', 'triagem'].includes(n[0])).filter(n => n[0] !== 'triagem' || pendTriagem().length).map(([k, ic, nm]) => `<button class="${S.view === k ? 'on' : ''}" data-v="${k}"><span class="ic">${ic}</span>${({ painel: 'Painel', processos: 'Processos', cardapio: 'Cardápio', relatorio: 'Relatório', triagem: 'Triagem', config: 'Ajustes' })[k]}</button>`).join('')}</nav>`;
   $$('[data-v]').forEach(b => b.onclick = () => { S.view = b.dataset.v; render(); window.scrollTo(0, 0); });
   $('#b-sair').onclick = sair;
   ({ painel: vPainel, processos: vProcessos, cardapio: vCardapio, relatorio: vRelatorio, config: vConfig, triagem: vTriagem }[S.view] || vPainel)($('#main'));
@@ -561,7 +561,7 @@ async function formProcesso(p = null, opts = {}) {
       <div class="campo c2"><label>CNPJ / CPF</label><input id="f-cnpj" value="${h(p.cnpj || '')}"></div>
       <div class="campo c4"><label>Serviço (como aparece no controle)</label><input id="f-serv" value="${h(p.servico || '')}" placeholder="Ex.: Alteração de endereço e inclusão de atividades"></div>
       <div class="campo c6"><label>Preset do cardápio</label>
-        <div style="display:flex;gap:6px"><select id="f-preset" style="flex:1"><option value="">— escolher preset —</option>${S.presets.map(x => `<option value="${x.id}" ${x.id === p.preset_id ? 'selected' : ''}>${h(x.nome)} (${(x.etapas || []).length} etapas)</option>`).join('')}</select>
+        <div class="linha-preset" style="display:flex;gap:6px"><select id="f-preset" style="flex:1"><option value="">— escolher preset —</option>${S.presets.map(x => `<option value="${x.id}" ${x.id === p.preset_id ? 'selected' : ''}>${h(x.nome)} (${(x.etapas || []).length} etapas)</option>`).join('')}</select>
         <button class="btn" id="b-aplicar" type="button">Carregar etapas</button><button class="btn" id="b-novopreset" type="button" title="Criar um preset novo sem sair daqui">＋ Novo preset</button></div>
         <span class="ajuda">Carregar substitui a esteira abaixo pelas etapas do preset. Depois você marca, reordena, tira ou junta etapas de outros presets.</span></div>
     </div>
@@ -925,31 +925,95 @@ function escolherAlerta() {
     formAlerta(lista, op === 'hoje' ? `Atualizações de ${new Date().toLocaleDateString('pt-BR')}` : op === 'parados' ? 'Processos parados' : `Resumo dos processos — ${new Date().toLocaleDateString('pt-BR')}`);
   });
 }
-function montarEmail(lista, titulo) {
-  const linhas = lista.sort((a, b) => a.cliente.localeCompare(b.cliente)).map(p => {
-    const pr = progresso(p), st = statusAtual(p), hj = atualDe(p.id).filter(a => a.data === hoje() && a.tipo !== 'sistema');
-    return { p, etapa: pr.total ? `${Math.min(pr.idx, pr.total)}/${pr.total} · ${pr.atual ? pr.atual.nome : 'todas concluídas'}` : '—',
-      status: hj.length ? hj.map(a => a.texto).join(' | ') : st.txt + (st.rep ? ' (sem novidade hoje)' : ''),
-      com: p.situacao === 'pausado' ? 'Pausado' : (SITUACOES[p.situacao]?.nome.replace(/s$/, '') + ' · ' + (AGUARDANDO[p.aguardando] || '')), parado: diasParado(p) };
+function montarEmail(lista, titulo, { recado = '', link = '' } = {}) {
+  const dataBR = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' });
+  const hr = new Date().getHours(), saud = hr < 12 ? 'Bom dia' : hr < 18 ? 'Boa tarde' : 'Boa noite';
+  const itens = [...lista].sort((a, b) => {
+    const peso = p => (p.aguardando === 'chefes' ? 0 : 2) + (atualDe(p.id).some(x => x.data === hoje() && x.tipo !== 'sistema') ? 0 : 1);
+    return peso(a) - peso(b) || a.cliente.localeCompare(b.cliente);
+  }).map(p => {
+    const pr = progresso(p), st = statusAtual(p), hj = atualDe(p.id).filter(a => a.data === hoje() && a.tipo !== 'sistema'), ult = ultimoMovimento(p);
+    return { p, pr, hoje: hj.map(a => a.texto.replace(/^[✔▶⏸✕]\s*/, '')).join(' · '), ult, st, parado: diasParado(p),
+      etapa: pr.total ? (pr.atual ? pr.atual.nome : 'Todas as etapas concluídas') : '' };
   });
-  const texto = `${titulo}\n\n` + linhas.map((l, i) => `${i + 1}. ${l.p.cliente} — ${l.p.servico || ''}\n   Etapa: ${l.etapa}\n   Status: ${l.status}\n   ${l.com}${l.p.situacao === 'andamento' ? ` · ${l.parado} dia(s) sem movimento` : ''}`).join('\n\n') + `\n\n— Controle de Legalização JOPEC`;
-  const td = 'style="border:1px solid #d5dbe3;padding:7px 9px;vertical-align:top;font-size:13px"';
-  const html = `<div style="font-family:Segoe UI,Arial,sans-serif;color:#1c2533"><h2 style="color:#a23133;font-size:18px;margin:0 0 4px">${h(titulo)}</h2><p style="color:#5b6b80;margin:0 0 14px">Controle de Legalização · JOPEC Serviços Administrativos</p>
-  <table style="border-collapse:collapse;width:100%"><tr>${['Cliente', 'Serviço', 'Etapa', 'Status', 'Situação'].map(x => `<th style="background:#a23133;color:#fff;padding:7px 9px;text-align:left;font-size:12px">${x}</th>`).join('')}</tr>
-  ${linhas.map(l => `<tr><td ${td}><b>${h(l.p.cliente)}</b></td><td ${td}>${h(l.p.servico || '')}</td><td ${td}>${h(l.etapa)}</td><td ${td}>${h(l.status)}</td><td ${td}>${h(l.com)}${l.p.situacao === 'andamento' && l.parado >= S.config.alerta_dias ? `<br><span style="color:#cf222e">${l.parado} dias sem movimento</span>` : ''}</td></tr>`).join('')}</table></div>`;
-  return { texto, html };
+  const and = S.processos.filter(p => p.situacao === 'andamento');
+  const k = { and: and.length, hoje: and.filter(p => atualDe(p.id).some(x => x.data === hoje() && x.tipo !== 'sistema')).length,
+    chefes: and.filter(p => p.aguardando === 'chefes').length, parados: and.filter(p => diasParado(p) >= S.config.alerta_dias).length };
+  const assunto = `Legalização JOPEC · ${new Date().toLocaleDateString('pt-BR')} — ${k.and} em andamento` + (k.hoje ? `, ${k.hoje} com novidade hoje` : '') + (k.chefes ? ` · ${k.chefes} dependem de vocês` : '');
+  const situ = it => it.p.situacao === 'pausado' ? '⏸ Pausado' + (it.p.pausa_motivo ? ` (${it.p.pausa_motivo})` : '') : it.p.situacao === 'andamento' ? (it.p.aguardando === 'chefes' ? '⚑ Depende de vocês' : AGUARDANDO[it.p.aguardando] || '') : SITUACOES[it.p.situacao]?.nome.replace(/s$/, '');
+
+  // ---------- texto simples (Gmail / celular)
+  const t = [];
+  t.push(`${saud}! Segue o resumo da Legalização — ${dataBR}.`);
+  if (recado) t.push('', recado);
+  t.push('', `▸ ${k.and} processos em andamento · ${k.hoje} com novidade hoje · ${k.parados} parados há ${S.config.alerta_dias}+ dias` + (k.chefes ? ` · ${k.chefes} aguardando decisão de vocês` : ''));
+  itens.forEach(it => {
+    t.push('', `■ ${it.p.cliente}${it.p.servico ? ' — ' + it.p.servico : ''}`);
+    if (it.pr.total) t.push(`  Etapa ${Math.min(it.pr.idx, it.pr.total)} de ${it.pr.total} (${it.pr.pct}%): ${it.etapa}`);
+    t.push(it.hoje ? `  Hoje: ${it.hoje}` : `  Último status${it.ult ? ' (' + fmtD(it.ult.data).slice(0, 5) + ')' : ''}: ${it.st.txt}`);
+    const extra = [situ(it), it.p.situacao === 'andamento' && it.parado >= S.config.alerta_dias ? `${it.parado} dias sem movimento` : ''].filter(Boolean).join(' · ');
+    if (extra) t.push(`  ${extra}`);
+  });
+  if (link) t.push('', `Andamento completo, atualizado em tempo real: ${link}`);
+  t.push('', 'Qualquer dúvida, estou à disposição.', 'Mateus · Departamento de Legalização · JOPEC');
+  const texto = t.join('\n');
+
+  // ---------- HTML (compatível com Gmail, Outlook e celular)
+  const V = '#a23133', TX = '#231a1b', SB = '#6b6162', BD = '#e6dfdf';
+  const kpi = (n, l, cor) => `<td width="25%" style="padding:4px"><table width="100%" cellpadding="0" cellspacing="0" style="background:#fff;border:1px solid ${BD};border-radius:10px"><tr><td style="padding:10px 8px;text-align:center"><div style="font:800 24px/1 Arial,sans-serif;color:${cor}">${n}</div><div style="font:600 11px/1.3 Arial,sans-serif;color:${SB};margin-top:4px">${l}</div></td></tr></table></td>`;
+  const card = it => {
+    const alerta = it.p.situacao === 'andamento' && it.parado >= S.config.alerta_dias;
+    const tag = (txt, bg, fg) => `<span style="display:inline-block;background:${bg};color:${fg};border-radius:20px;padding:2px 9px;font:600 11px Arial,sans-serif;margin:2px 4px 0 0">${h(txt)}</span>`;
+    return `<tr><td style="padding:6px 0"><table width="100%" cellpadding="0" cellspacing="0" style="background:#fff;border:1px solid ${BD};border-left:4px solid ${it.p.aguardando === 'chefes' ? '#bf8700' : V};border-radius:10px"><tr><td style="padding:14px 16px">
+      <div style="font:700 15px/1.3 Arial,sans-serif;color:${TX}">${h(it.p.cliente)}</div>
+      ${it.p.servico ? `<div style="font:13px/1.4 Arial,sans-serif;color:${SB}">${h(it.p.servico)}</div>` : ''}
+      ${it.pr.total ? `<div style="font:12px Arial,sans-serif;color:${SB};margin-top:10px">Etapa ${Math.min(it.pr.idx, it.pr.total)} de ${it.pr.total} · <b style="color:${TX}">${h(it.etapa)}</b></div>
+      <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:5px"><tr><td style="background:#efe9e9;border-radius:6px;height:7px;line-height:7px;font-size:0"><table width="${Math.max(it.pr.pct, 3)}%" cellpadding="0" cellspacing="0"><tr><td style="background:#1a7f37;border-radius:6px;height:7px;line-height:7px;font-size:0">&nbsp;</td></tr></table></td><td width="38" style="font:700 11px Arial,sans-serif;color:${SB};text-align:right">${it.pr.pct}%</td></tr></table>` : ''}
+      <div style="font:13px/1.45 Arial,sans-serif;color:${TX};background:#f7f4f4;border-radius:8px;padding:8px 10px;margin-top:10px">${it.hoje ? `<b style="color:#1a7f37">Hoje:</b> ${h(it.hoje)}` : `<b>Último status${it.ult ? ' (' + fmtD(it.ult.data).slice(0, 5) + ')' : ''}:</b> ${h(it.st.txt)}`}</div>
+      <div style="margin-top:6px">${it.p.aguardando === 'chefes' && it.p.situacao === 'andamento' ? tag('⚑ Depende de vocês', '#fff4d4', '#8a5a00') : tag(situ(it) || '—', '#f2eded', SB)}${alerta ? tag(`${it.parado} dias sem movimento`, '#fbdcd8', '#b3261e') : ''}</div>
+    </td></tr></table></td></tr>`;
+  };
+  const html = `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f3f0f0">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f3f0f0"><tr><td align="center" style="padding:20px 10px">
+  <table width="100%" cellpadding="0" cellspacing="0" style="max-width:620px">
+    <tr><td style="background:${V};background-image:linear-gradient(120deg,#a23133,#75232a);border-radius:14px 14px 0 0;padding:20px 22px">
+      <div style="font:800 22px Arial,sans-serif;color:#fff;letter-spacing:.3px">JOPEC</div>
+      <div style="font:600 13px Arial,sans-serif;color:#f2cfd0;margin-top:2px">Legalização · ${h(titulo)}</div></td></tr>
+    <tr><td style="background:#faf8f8;padding:18px 18px 8px;border:1px solid ${BD};border-top:0">
+      <div style="font:15px/1.5 Arial,sans-serif;color:${TX}">${saud}! Segue o resumo da Legalização de <b>${h(dataBR)}</b>.</div>
+      ${recado ? `<div style="font:14px/1.5 Arial,sans-serif;color:${TX};background:#fff4d4;border-radius:8px;padding:10px 12px;margin-top:10px">${h(recado).replace(/\n/g, '<br>')}</div>` : ''}
+      <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:12px"><tr>${kpi(k.and, 'Em andamento', TX)}${kpi(k.hoje, 'Novidade hoje', '#1a7f37')}${kpi(k.chefes, 'Dependem de vocês', '#8a5a00')}${kpi(k.parados, `Parados ${S.config.alerta_dias}+ dias`, '#b3261e')}</tr></table>
+      <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:8px">${itens.map(card).join('')}</table>
+      ${link ? `<table cellpadding="0" cellspacing="0" style="margin:14px auto 6px"><tr><td style="background:${V};border-radius:10px"><a href="${h(link)}" style="display:inline-block;padding:12px 22px;font:700 14px Arial,sans-serif;color:#fff;text-decoration:none">Ver andamento completo →</a></td></tr></table>` : ''}
+      <div style="font:13px/1.5 Arial,sans-serif;color:${SB};margin:16px 0 8px">Qualquer dúvida, estou à disposição.<br><b style="color:${TX}">Mateus</b> · Departamento de Legalização · JOPEC</div>
+    </td></tr>
+    <tr><td style="font:11px Arial,sans-serif;color:#9a8f90;text-align:center;padding:12px">Enviado pelo Controle de Legalização JOPEC</td></tr>
+  </table></td></tr></table></body></html>`;
+  return { assunto, texto, html };
 }
-function formAlerta(lista, titulo) {
-  const { texto, html } = montarEmail(lista, titulo);
-  modal(`<div class="cab"><div style="flex:1"><h3>✉ Alerta por e-mail</h3><div class="sub">De: ${h(S.config.email_remetente)} · ${lista.length} processo(s)</div></div><button class="btn ghost" data-fechar>✕</button></div>
+async function formAlerta(lista, titulo) {
+  let link = '';
+  try { if (!MODO_DEMO) { const r = await sb.from('leg_link_publico').select('token').eq('ativo', true).limit(1); if (r.data && r.data[0]) link = urlPublica(r.data[0].token); } } catch {}
+  let { assunto, texto, html } = montarEmail(lista, titulo, { link });
+  modal(`<div class="cab"><div style="flex:1"><h3>✉ Alerta por e-mail</h3><div class="sub">De ${h(S.config.email_remetente)} · ${lista.length} processo(s)</div></div><button class="btn ghost" data-fechar>✕</button></div>
   <div class="corpo"><div class="form">
     <div class="campo c6"><label>Para</label><input id="e-para" value="${h(S.config.email_para)}"></div>
     <div class="campo c6"><label>Cópia (CC)</label><input id="e-cc" value="${h(S.config.email_cc)}"></div>
-    <div class="campo c6"><label>Assunto</label><input id="e-ass" value="${h('[Legalização JOPEC] ' + titulo)}"></div>
-    <div class="campo c6"><label>Mensagem (pode editar)</label><textarea id="e-txt" style="min-height:260px;font-family:inherit">${h(texto)}</textarea></div>
-  </div>${MODO_DEMO ? '<div class="aviso amarelo">Modo demonstração: o envio automático só funciona com o Supabase ligado. Use "Abrir no Gmail".</div>' : ''}</div>
-  <div class="rod"><button class="btn" data-fechar>Cancelar</button><button class="btn" id="e-gmail">Abrir no Gmail</button><button class="btn pri" id="e-env" ${MODO_DEMO ? 'disabled' : ''}>Enviar automaticamente</button></div>`, 'lg');
-  const editado = () => $('#e-txt').value !== texto;
+    <div class="campo c6"><label>Assunto</label><input id="e-ass" value="${h(assunto)}"></div>
+    <div class="campo c6"><label>Recado no topo (opcional)</label><textarea id="e-rec" style="min-height:60px" placeholder="Ex.: Preciso de um retorno sobre a Marmo até amanhã."></textarea></div>
+  </div>
+  <div class="tabs" style="margin-top:14px"><button class="tab on" data-ev="ver">👁 Como vai chegar</button><button class="tab" data-ev="txt">✎ Texto simples</button></div>
+  <iframe id="e-prev" style="width:100%;height:520px;border:1px solid var(--borda);border-radius:12px;background:#f3f0f0"></iframe>
+  <textarea id="e-txt" style="display:none;width:100%;min-height:360px;padding:10px;border:1px solid var(--borda);border-radius:12px;font-family:inherit">${h(texto)}</textarea>
+  ${MODO_DEMO ? '<div class="aviso amarelo" style="margin-top:10px">Modo demonstração: o envio automático só funciona com o Supabase ligado. Use "Abrir no Gmail".</div>' : ''}</div>
+  <div class="rod"><button class="btn" data-fechar>Cancelar</button><button class="btn" id="e-gmail">Abrir no Gmail</button><button class="btn pri" id="e-env" ${MODO_DEMO ? 'disabled' : ''}>Enviar agora</button></div>`, 'lg');
+  let textoEditado = false;
+  const atualiza = () => { const r = montarEmail(lista, titulo, { recado: $('#e-rec').value.trim(), link }); html = r.html; if (!textoEditado) { texto = r.texto; $('#e-txt').value = texto; } $('#e-prev').srcdoc = html; };
+  atualiza();
+  $('#e-rec').oninput = atualiza;
+  $('#e-txt').oninput = () => textoEditado = true;
+  $$('[data-ev]').forEach(b => b.onclick = () => { $$('[data-ev]').forEach(x => x.classList.toggle('on', x === b)); const v = b.dataset.ev === 'ver'; $('#e-prev').style.display = v ? '' : 'none'; $('#e-txt').style.display = v ? 'none' : ''; });
+  const editado = () => textoEditado;
   $('#e-gmail').onclick = () => {
     const u = new URL('https://mail.google.com/mail/'); u.searchParams.set('authuser', S.config.email_remetente); u.searchParams.set('view', 'cm'); u.searchParams.set('fs', '1');
     u.searchParams.set('to', $('#e-para').value); u.searchParams.set('cc', $('#e-cc').value); u.searchParams.set('su', $('#e-ass').value); u.searchParams.set('body', $('#e-txt').value);
@@ -966,8 +1030,8 @@ function formAlerta(lista, titulo) {
         else if (/permiss/i.test(msg)) msg = 'Só o administrador pode enviar alertas.';
         throw new Error(msg);
       }
-      fecharModal(); toast('E-mail enviado ✔');
-    } catch (err) { b.disabled = false; b.textContent = 'Enviar automaticamente'; alert('Não foi possível enviar: ' + err.message + '\n\nUse "Abrir no Gmail" enquanto isso.'); }
+      fecharModal(); toast('E-mail enviado para os chefes ✔');
+    } catch (err) { b.disabled = false; b.textContent = 'Enviar agora'; alert('Não foi possível enviar: ' + err.message + '\n\nUse "Abrir no Gmail" enquanto isso.'); }
   };
 }
 
