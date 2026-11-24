@@ -4,7 +4,7 @@
   --band:linear-gradient(120deg,#a23133 0%,#75232a 100%);
   --info:#1d5fa8; --info-c:#dbe8f8; --cinza-marca:#bdbec0;
   --bg:#f5f4f4; --card:#fff; --card2:#faf8f8; --hover:#f3eded; --borda:#e3dcdc; --borda-campo:#c4b7b8; --borda-forte:#b5a6a7;
-  --txt:#231a1b; --sub:#6b6162; --sub2:#4a3f40; --apagado:#8a7f80;
+  --txt:#1f1718; --sub:#514748; --sub2:#362c2d; --apagado:#6f6465;
   --f-display:"Bricolage Grotesque","Segoe UI",system-ui,sans-serif;
   --verde:#1a7f37; --verde-c:#dafbe1; --verde-l:#f3fcf5; --amarelo:#875a00; --amarelo-c:#fff4d4; --amarelo-b:#e9c46a;
   --vermelho:#c0202b; --vermelho-c:#ffebe9; --vermelho-b:#f5b5b9; --cinza-c:#efeaea; --roxo:#7343d0; --roxo-c:#f3eefe;
@@ -12,7 +12,7 @@
   --foco:0 0 0 3px rgb(162 49 51 / .28);
   --overlay:rgb(35 14 16 / .48);
   --r:12px; --sombra:0 1px 2px rgb(60 20 22 / .06),0 6px 18px rgb(60 20 22 / .06); --sombra-alta:0 24px 70px rgb(40 10 12 / .28);
-  --mob-off:#f3d2d3;
+  --mob-off:#fbe6e6;
 }
 :root[data-tema=escuro]{
   color-scheme:dark;
@@ -20,14 +20,14 @@
   --band:linear-gradient(120deg,#6e2023 0%,#3f1114 100%);
   --info:#86b9f3; --info-c:#14283f;
   --bg:#141011; --card:#1f191a; --card2:#191415; --hover:#2a2223; --borda:#352b2c; --borda-campo:#5a4b4c; --borda-forte:#6e5e5f;
-  --txt:#f2ecec; --sub:#b9abac; --sub2:#d9cdcd; --apagado:#8f8182;
+  --txt:#f7f2f2; --sub:#d3c8c9; --sub2:#ebe3e3; --apagado:#ab9c9d;
   --verde:#5fcf7e; --verde-c:#143520; --verde-l:#16241a; --amarelo:#e8b85a; --amarelo-c:#33270e; --amarelo-b:#6b5420;
   --vermelho:#ff8a8f; --vermelho-c:#3e171a; --vermelho-b:#7a2a30; --cinza-c:#2a2324; --roxo:#bba2f7; --roxo-c:#2a2140;
   --barra:linear-gradient(90deg,#3fb950,#2ea043);
   --foco:0 0 0 3px rgb(242 150 154 / .35);
   --overlay:rgb(0 0 0 / .62);
   --sombra:0 1px 2px rgb(0 0 0 / .35),0 6px 18px rgb(0 0 0 / .25); --sombra-alta:0 24px 70px rgb(0 0 0 / .6);
-  --mob-off:#d9b4b6;
+  --mob-off:#f0dcdd;
 }
 *{box-sizing:border-box}
 html,body{margin:0;height:100%}
@@ -63,7 +63,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 .btn-sair{border:1.5px solid #fff;background:transparent;color:#fff;border-radius:10px;padding:7px 14px;cursor:pointer;font-weight:700}
 .btn-sair:hover{background:rgba(255,255,255,.12)}
 .navtop{display:flex;gap:4px;overflow-x:auto}
-.nav{display:flex;align-items:center;gap:6px;padding:10px 14px 12px;cursor:pointer;border:0;background:none;color:#f2cfd0;font-weight:700;white-space:nowrap;border-bottom:3px solid transparent}
+.nav{display:flex;align-items:center;gap:6px;padding:10px 14px 12px;cursor:pointer;border:0;background:none;color:#fbe3e3;font-weight:700;white-space:nowrap;border-bottom:3px solid transparent}
 .nav:hover{color:#fff}
 .nav.on{color:#fff;border-bottom-color:#fff}
 .nav .ic{display:none}
@@ -427,3 +427,7 @@ body{transition:background-color .2s,color .2s;-webkit-font-smoothing:antialiase
 body.com-modal{overflow:hidden}
 [hidden]{display:none !important}
 @media (max-width:860px){ #n-txt{flex:1 1 100% !important} #n-data{flex:1 1 auto !important} #b-reg{flex:0 0 auto} }
+
+/* textos secundários mais firmes (leitura) */
+.kpi .l,.secao .dica,.topo .sub,.proc .serv,.etapa-atual,.rotina-linha .nm small,.campo .ajuda,.passo .dt,.dia .d,.pref small,.contagem,.chip{font-weight:500}
+.usr .mail{opacity:1}
