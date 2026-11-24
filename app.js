@@ -47,7 +47,7 @@ const moeda = v => valoresOcultos() ? 'R$ •••••' : moedaReal(v);
 const botaoOlho = () => `<button type="button" class="btn-olho" data-olho title="${valoresOcultos() ? 'Mostrar valores' : 'Esconder valores'}">${valoresOcultos() ? '🙈' : '👁'}</button>`;
 function ligarOlho(el) { $$('[data-olho]', el).forEach(b => b.onclick = ev => { ev.stopPropagation(); localStorage.setItem('leg_ocultar_valores', valoresOcultos() ? '0' : '1'); render(); }); }
 const fimDeSemana = d => d.getDay() === 0 || d.getDay() === 6;
-function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('on'), 2400); }
+function toast(msg, tipo = 'ok') { const t = $('#toast'); t.textContent = msg; t.className = 'on ' + tipo; clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('on'), tipo === 'erro' ? 4200 : 2400); }
 function diasEntre(a, b, uteis) { // dias contados de a (exclusivo) até b (inclusivo)
   let n = 0; const d = parseD(a), fim = parseD(b);
   while (d < fim) { d.setDate(d.getDate() + 1); if (!uteis || !fimDeSemana(d)) n++; }
@@ -97,7 +97,63 @@ const DB = {
   },
 };
 
-const S = { papel: null, email: '', view: 'painel', aba: 'andamento', busca: '', presets: [], processos: [], etapas: [], atual: [], config: { ...CONFIG_PADRAO }, mesRel: hoje().slice(0, 7) };
+
+// ---------------------------------------------------------------- ícones (traço fino, estilo Lucide)
+const IC_PATH = {
+  painel: '<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
+  processos: '<path d="M3 6h.01M3 12h.01M3 18h.01"/><path d="M8 6h13M8 12h13M8 18h13"/>',
+  cardapio: '<path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/>',
+  relatorio: '<path d="M3 3v18h18"/><path d="M8 17v-5M13 17V8M18 17v-9"/>',
+  triagem: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.7 4H7.3a2 2 0 0 0-1.8 1.1Z"/>',
+  config: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/>',
+  sol: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  lua: '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/>',
+  auto: '<rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/>',
+};
+const ic = (k, sz = 18) => `<svg class="svg-ic" width="${sz}" height="${sz}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC_PATH[k] || ''}</svg>`;
+
+// ---------------------------------------------------------------- preferências deste aparelho (tema, densidade…)
+const PREF_PADRAO = { tema: 'auto', densidade: 'normal', inicio: 'painel', ordem: 'parados', filtroAg: '', filtroPreset: '' };
+const pref = k => { try { return { ...PREF_PADRAO, ...JSON.parse(localStorage.getItem('leg_pref') || '{}') }[k]; } catch { return PREF_PADRAO[k]; } };
+const setPref = (k, v) => { let o = {}; try { o = JSON.parse(localStorage.getItem('leg_pref') || '{}'); } catch {} o[k] = v; localStorage.setItem('leg_pref', JSON.stringify(o)); };
+const MQ_ESCURO = matchMedia('(prefers-color-scheme: dark)');
+function aplicarTema() {
+  const t = pref('tema'), escuro = t === 'escuro' || (t === 'auto' && MQ_ESCURO.matches);
+  document.documentElement.dataset.tema = escuro ? 'escuro' : 'claro';
+  document.documentElement.dataset.densidade = pref('densidade');
+  const m = document.querySelector('meta[name=theme-color]'); if (m) m.content = escuro ? '#4e1619' : '#a23133';
+}
+MQ_ESCURO.addEventListener?.('change', () => { if (pref('tema') === 'auto') { aplicarTema(); } });
+aplicarTema();
+const TEMAS = { auto: ['auto', 'Automático (segue o aparelho)'], claro: ['sol', 'Claro'], escuro: ['lua', 'Escuro'] };
+function botaoTema() { const t = pref('tema'); return `<button class="btn-tema" id="b-tema" title="Tema: ${TEMAS[t][1]} — clique para trocar" aria-label="Trocar tema (atual: ${TEMAS[t][1]})">${ic(TEMAS[t][0], 17)}</button>`; }
+function ligarTema(raiz = document) { const b = $('#b-tema', raiz); if (b) b.onclick = () => { const ord = ['auto', 'claro', 'escuro']; const n = ord[(ord.indexOf(pref('tema')) + 1) % 3]; setPref('tema', n); aplicarTema(); b.outerHTML = botaoTema(); ligarTema(raiz); toast('Tema: ' + TEMAS[n][1]); }; }
+
+// ---------------------------------------------------------------- diálogos no visual do app (substituem os pop-ups cinza do navegador)
+function dialogo({ titulo, msg, ok = 'OK', cancelar = 'Cancelar', perigo = false, so_ok = false }) {
+  return new Promise(res => {
+    const box = document.createElement('div'); box.className = 'fundo dlg-fundo';
+    box.innerHTML = `<div class="dlg ${perigo ? 'perigo' : ''}" role="alertdialog" aria-modal="true" aria-labelledby="dlg-t">
+      <div class="dlg-ic">${perigo ? '!' : so_ok ? 'i' : '?'}</div>
+      <h3 id="dlg-t">${h(titulo)}</h3>${msg ? `<p>${h(msg).replace(/\n/g, '<br>')}</p>` : ''}
+      <div class="dlg-bts">${so_ok ? '' : `<button class="btn" data-r="0">${h(cancelar)}</button>`}<button class="btn ${perigo ? 'dang-forte' : 'pri'}" data-r="1">${h(ok)}</button></div></div>`;
+    document.body.appendChild(box);
+    const fim = v => { box.remove(); document.removeEventListener('keydown', tec, true); res(v); };
+    const tec = e => { if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); fim(false); } };
+    document.addEventListener('keydown', tec, true);
+    box.onmousedown = e => { if (e.target === box) fim(false); };
+    $$('[data-r]', box).forEach(b => b.onclick = () => fim(b.dataset.r === '1'));
+    setTimeout(() => $('[data-r="1"]', box).focus(), 30);
+  });
+}
+function confirmar(texto) {
+  const t = String(texto), q = t.search(/\?(\s|$)/), titulo = q > 0 ? t.slice(0, q + 1) : t.split('\n\n')[0];
+  const resto = [t.slice(titulo.length).trim().replace(/^\(|\)$/g, '')];
+  const m = /^(Excluir|Apagar|Remover|Desativar)/.exec(titulo);
+  return dialogo({ titulo, msg: resto.join('\n\n'), ok: m ? m[1] : 'Confirmar', perigo: !!m });
+}
+function avisar(texto) { const [titulo, ...resto] = String(texto).split(/\n\n|: /); return dialogo({ titulo: resto.length ? titulo : 'Atenção', msg: resto.length ? resto.join(': ') : titulo, so_ok: true, ok: 'Entendi', perigo: true }); }
+const S = { papel: null, email: '', view: pref('inicio'), aba: 'andamento', busca: '', presets: [], processos: [], etapas: [], atual: [], config: { ...CONFIG_PADRAO }, mesRel: hoje().slice(0, 7) };
 const admin = () => S.papel === 'admin';
 // Logos da Jopec (os mesmos do app de certidões). Se não carregarem, aparece o nome em texto.
 const LOGO_BASE = 'https://certidoes-jopec.vercel.app/';
@@ -114,14 +170,14 @@ async function carregar() {
 async function acao(fn, msg) {
   if (!admin()) { toast('Perfil de visualização: sem permissão para alterar.'); return false; }
   try { await fn(); await carregar(); render(); if (msg) toast(msg); return true; }
-  catch (err) { console.error(err); alert('Não foi possível salvar: ' + (err.message || err)); return false; }
+  catch (err) { console.error(err); avisar('Não foi possível salvar: ' + (err.message || err) + '\n\nConfira a internet e tente de novo. Nada foi perdido do que já estava salvo.'); return false; }
 }
 
 // ---------------------------------------------------------------- regras do processo
 const etapasDe = id => S.etapas.filter(e => e.processo_id === id).sort((a, b) => a.ordem - b.ordem);
 const atualDe = id => S.atual.filter(a => a.processo_id === id).sort((a, b) => (a.data + a.criado_em).localeCompare(b.data + b.criado_em));
 const presetDe = p => S.presets.find(x => x.id === p.preset_id);
-const corDe = p => presetDe(p)?.cor || '#1f6feb';
+const corDe = p => presetDe(p)?.cor || '#a23133';
 const modoDe = p => p.modo_diario && p.modo_diario !== 'padrao' ? p.modo_diario : S.config.modo_padrao;
 
 function progresso(p) {
@@ -184,13 +240,14 @@ function telaLogin(erro = '', emailAnt = '') {
       <button type="button" class="perfil ${perfil === 'equipe' ? 'on' : ''}" data-p="equipe"><b>👁 Equipe</b><span>Somente visualizar</span></button>
       <button type="button" class="perfil ${perfil === 'admin' ? 'on' : ''}" data-p="admin"><b>🔑 Administrador</b><span>Acesso total</span></button>
     </div>` : `<div class="campo c6" style="margin-bottom:12px"><label>E-mail</label><input type="email" id="email" autocomplete="username" required value="${h(emailAnt || localStorage.getItem('leg_ultimo_email') || '')}"></div>`}
-    <div class="campo c6"><label>Senha</label><input type="password" id="senha" autocomplete="current-password" required></div>
+    <div class="campo c6"><label>Senha</label><div class="senha-box"><input type="password" id="senha" autocomplete="current-password" required><button type="button" class="ver-senha" id="ver-senha" aria-label="Mostrar senha">Mostrar</button></div></div>
     ${erro ? `<div class="aviso vermelho" style="margin-top:12px">${h(erro)}</div>` : ''}
-    <button class="btn pri" style="width:100%;justify-content:center;margin-top:16px;padding:11px">Entrar</button>
+    <button class="btn pri" id="b-entrar" style="width:100%;justify-content:center;margin-top:16px;padding:11px">Entrar</button>
     ${MODO_DEMO ? `<div class="demo-aviso">Modo demonstração (Supabase ainda não configurado). Senhas: equipe = <b>${h(CFG.DEMO_SENHA_EQUIPE)}</b>, administrador = <b>${h(CFG.DEMO_SENHA_ADMIN)}</b>. Os dados ficam só neste navegador.</div>` : ''}
   </form></div>`;
   $$('.perfil').forEach(b => b.onclick = () => { sessionStorage.setItem('leg_perfil_sel', b.dataset.p); $$('.perfil').forEach(x => x.classList.toggle('on', x === b)); });
   const foco = $('#email') && !$('#email').value ? $('#email') : $('#senha'); foco.focus();
+  const vs = $('#ver-senha'); if (vs) vs.onclick = () => { const i = $('#senha'), mostrar = i.type === 'password'; i.type = mostrar ? 'text' : 'password'; vs.textContent = mostrar ? 'Ocultar' : 'Mostrar'; vs.setAttribute('aria-label', mostrar ? 'Ocultar senha' : 'Mostrar senha'); i.focus(); };
   $('#f-login').onsubmit = async ev => {
     ev.preventDefault();
     const senha = $('#senha').value;
@@ -200,6 +257,7 @@ function telaLogin(erro = '', emailAnt = '') {
       sessionStorage.setItem('leg_demo_papel', p); return iniciar();
     }
     const email = $('#email').value.trim().toLowerCase();
+    const be = $('#b-entrar'); be.disabled = true; be.textContent = 'Entrando…';
     const { error } = await sb.auth.signInWithPassword({ email, password: senha });
     if (error) return telaLogin('E-mail ou senha incorretos.', email);
     localStorage.setItem('leg_ultimo_email', email);
@@ -213,8 +271,8 @@ async function sair() {
 
 // ---------------------------------------------------------------- casca
 const NAV = [
-  ['painel', '◉', 'Painel do dia'], ['processos', '☰', 'Processos'], ['cardapio', '▤', 'Cardápio de etapas'],
-  ['relatorio', '₿', 'Relatório mensal'], ['triagem', '⇄', 'Triagem da planilha'], ['config', '⚙', 'Configurações'],
+  ['painel', 'painel', 'Painel do dia'], ['processos', 'processos', 'Processos'], ['cardapio', 'cardapio', 'Cardápio de etapas'],
+  ['relatorio', 'relatorio', 'Relatório mensal'], ['triagem', 'triagem', 'Triagem da planilha'], ['config', 'config', 'Configurações'],
 ];
 function render() {
   document.body.className = 'papel-' + S.papel;
@@ -224,15 +282,16 @@ function render() {
     <header class="band">
       <div class="wrap topbar">
         <div class="brand">${LOGO_MARCA}<div>${LOGO_NOME}<h1>Legalização · Controle de Processos</h1></div></div>
-        <div class="usr"><span class="papel">${admin() ? '🔑 Administrador' : '👁 Somente leitura'}</span>${S.email ? `<span class="mail">${h(S.email)}</span>` : ''}${MODO_DEMO ? '<span class="papel">demonstração</span>' : ''}<button class="btn-sair" id="b-sair">Sair</button></div>
+        <div class="usr"><span class="papel">${admin() ? '🔑 Administrador' : '👁 Somente leitura'}</span>${S.email ? `<span class="mail">${h(S.email)}</span>` : ''}${MODO_DEMO ? '<span class="papel">demonstração</span>' : ''}${botaoTema()}<button class="btn-sair" id="b-sair">Sair</button></div>
       </div>
-      <nav class="wrap navtop">${NAV.filter(n => admin() || !['config', 'triagem'].includes(n[0])).filter(n => n[0] !== 'triagem' || pendTriagem().length).map(([k, ic, nm]) => `<button class="nav ${S.view === k ? 'on' : ''}" data-v="${k}"><span class="ic">${ic}</span>${nm}${k === 'processos' ? `<span class="n">${nAnd}</span>` : ''}${k === 'triagem' ? `<span class="n">${pendTriagem().length}</span>` : ''}</button>`).join('')}</nav>
+      <nav class="wrap navtop">${NAV.filter(n => admin() || n[0] !== 'triagem').filter(n => n[0] !== 'triagem' || pendTriagem().length).map(([k, icn, nm]) => `<button class="nav ${S.view === k ? 'on' : ''}" data-v="${k}"><span class="ic">${ic(icn, 16)}</span>${nm}${k === 'processos' ? `<span class="n">${nAnd}</span>` : ''}${k === 'triagem' ? `<span class="n">${pendTriagem().length}</span>` : ''}</button>`).join('')}</nav>
     </header>
     <main class="main wrap" id="main"></main>
   </div>
-  <nav class="mobnav">${NAV.filter(n => admin() || !['config', 'triagem'].includes(n[0])).filter(n => n[0] !== 'triagem' || pendTriagem().length).map(([k, ic, nm]) => `<button class="${S.view === k ? 'on' : ''}" data-v="${k}"><span class="ic">${ic}</span>${({ painel: 'Painel', processos: 'Processos', cardapio: 'Cardápio', relatorio: 'Relatório', triagem: 'Triagem', config: 'Ajustes' })[k]}</button>`).join('')}</nav>`;
+  <nav class="mobnav">${NAV.filter(n => admin() || n[0] !== 'triagem').filter(n => n[0] !== 'triagem' || pendTriagem().length).map(([k, icn, nm]) => `<button class="${S.view === k ? 'on' : ''}" data-v="${k}" aria-label="${nm}"><span class="ic">${ic(icn, 21)}</span>${({ painel: 'Painel', processos: 'Processos', cardapio: 'Cardápio', relatorio: 'Relatório', triagem: 'Triagem', config: 'Ajustes' })[k]}</button>`).join('')}</nav>`;
   $$('[data-v]').forEach(b => b.onclick = () => { S.view = b.dataset.v; render(); window.scrollTo(0, 0); });
-  $('#b-sair').onclick = sair;
+  $('#b-sair').onclick = sair; ligarTema();
+  acessivel($('#main'));
   ({ painel: vPainel, processos: vProcessos, cardapio: vCardapio, relatorio: vRelatorio, config: vConfig, triagem: vTriagem }[S.view] || vPainel)($('#main'));
 }
 
@@ -254,6 +313,8 @@ function cartao(p) {
       ${p.situacao === 'finalizado' ? `<span class="chip verde">finalizado ${fmtD(p.data_conclusao)}</span>` : ''}
     </div></div>`;
 }
+function acessivel(raiz) { setTimeout(() => $$('[data-proc]:not(a):not(button),[data-ir],[data-rel]', raiz).forEach(x => { x.tabIndex = 0; x.setAttribute('role', 'button'); }), 0); }
+document.addEventListener('keydown', e => { const t = e.target; if ((e.key === 'Enter' || e.key === ' ') && t.getAttribute?.('role') === 'button' && !/^(BUTTON|A|INPUT|SELECT|TEXTAREA)$/.test(t.tagName)) { e.preventDefault(); t.click(); } });
 function ligarCartoes(el) { $$('[data-proc]', el).forEach(c => c.onclick = () => abrirDetalhe(c.dataset.proc)); }
 
 // ---------------------------------------------------------------- PAINEL
@@ -313,18 +374,50 @@ function vPainel(el) {
 // ---------------------------------------------------------------- PROCESSOS
 function vProcessos(el) {
   const cont = k => S.processos.filter(p => p.situacao === k).length;
-  const q = S.busca.toLowerCase();
-  let lista = S.processos.filter(p => p.situacao === S.aba && (!q || [p.cliente, p.cnpj, p.servico, p.responsavel].join(' ').toLowerCase().includes(q)));
-  lista.sort((a, b) => S.aba === 'andamento' ? diasParado(b) - diasParado(a) : (b.data_conclusao || b.atualizado_em || '').localeCompare(a.data_conclusao || a.atualizado_em || ''));
+  const ORD = { parados: 'Mais tempo parados', cliente: 'Cliente (A–Z)', progresso: 'Menor progresso', recentes: 'Movimentados por último', prioridade: 'Prioridade' };
+  const presetsUsados = S.presets.filter(x => S.processos.some(p => p.preset_id === x.id));
   el.innerHTML = `
-  <div class="topo"><h2>Processos</h2><input class="busca" id="busca" placeholder="Buscar cliente, CNPJ, serviço…" value="${h(S.busca)}">
+  <div class="topo"><h2>Processos</h2>
     <button class="btn nao-imprimir" id="b-imp">🖨 Controle para os chefes</button>
     <button class="btn pri adm" id="b-novo">＋ Novo processo</button></div>
   <div class="tabs">${Object.entries(SITUACOES).map(([k, v]) => `<button class="tab ${S.aba === k ? 'on' : ''}" data-aba="${k}">${v.ic} ${v.nome}<span class="n">${cont(k)}</span></button>`).join('')}</div>
-  ${lista.length ? `<div class="grade">${lista.map(cartao).join('')}</div>` : `<div class="card vazio">Nada por aqui.</div>`}`;
+  <div class="filtros">
+    <div class="busca-box"><input class="busca busca-proc" id="busca" type="search" placeholder="Buscar cliente, CNPJ, serviço, responsável…" value="${h(S.busca)}" aria-label="Buscar processos"></div>
+    <select id="fl-ord" aria-label="Ordenar">${Object.entries(ORD).map(([k, v]) => `<option value="${k}" ${pref('ordem') === k ? 'selected' : ''}>↕ ${v}</option>`).join('')}</select>
+    <select id="fl-ag" aria-label="Filtrar por com quem está"><option value="">Com quem está: todos</option>${Object.entries(AGUARDANDO).map(([k, v]) => `<option value="${k}" ${pref('filtroAg') === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
+    ${presetsUsados.length > 1 ? `<select id="fl-pr" aria-label="Filtrar por serviço"><option value="">Serviço: todos</option>${presetsUsados.map(x => `<option value="${x.id}" ${pref('filtroPreset') === x.id ? 'selected' : ''}>${h(x.nome)}</option>`).join('')}</select>` : ''}
+    <button class="btn ghost sm" id="fl-limpar" hidden>Limpar filtros</button>
+  </div>
+  <div id="lista-proc"></div>`;
+  const desenhar = () => {
+    const q = S.busca.toLowerCase().trim(), ag = pref('filtroAg'), pr = pref('filtroPreset'), ord = pref('ordem');
+    const PRI = { urgente: 0, alta: 1, normal: 2, baixa: 3 };
+    const ultimo = p => (ultimoMovimento(p)?.data || p.atualizado_em || '');
+    let lista = S.processos.filter(p => p.situacao === S.aba
+      && (!q || [p.cliente, p.cnpj, p.servico, p.responsavel].join(' ').toLowerCase().includes(q))
+      && (!ag || (p.aguardando || 'jopec') === ag) && (!pr || p.preset_id === pr));
+    const fns = {
+      parados: (a, b) => S.aba === 'andamento' ? diasParado(b) - diasParado(a) : (b.data_conclusao || b.atualizado_em || '').localeCompare(a.data_conclusao || a.atualizado_em || ''),
+      cliente: (a, b) => a.cliente.localeCompare(b.cliente, 'pt-BR'),
+      progresso: (a, b) => progresso(a).pct - progresso(b).pct,
+      recentes: (a, b) => ultimo(b).localeCompare(ultimo(a)),
+      prioridade: (a, b) => (PRI[a.prioridade] ?? 2) - (PRI[b.prioridade] ?? 2) || diasParado(b) - diasParado(a),
+    };
+    lista.sort(fns[ord] || fns.parados);
+    const filtrando = q || ag || pr;
+    $('#fl-limpar', el).hidden = !filtrando;
+    $('#lista-proc', el).innerHTML = lista.length
+      ? `${filtrando ? `<div class="contagem">${lista.length} de ${cont(S.aba)} ${cont(S.aba) === 1 ? 'processo' : 'processos'}</div>` : ''}<div class="grade">${lista.map(cartao).join('')}</div>`
+      : `<div class="card vazio"><div class="vazio-ic">${filtrando ? '🔍' : SITUACOES[S.aba].ic}</div><b>${filtrando ? 'Nenhum processo encontrado' : `Nenhum processo ${({ andamento: 'em andamento', pausado: 'pausado', finalizado: 'finalizado', desistencia: 'com desistência', arquivado: 'arquivado' })[S.aba]}`}</b><span>${filtrando ? 'Tente outra palavra ou limpe os filtros.' : S.aba === 'andamento' && admin() ? 'Clique em “Novo processo” para colocar um cliente na esteira.' : ''}</span></div>`;
+    ligarCartoes($('#lista-proc', el)); acessivel($('#lista-proc', el));
+  };
+  desenhar();
   $$('[data-aba]', el).forEach(b => b.onclick = () => { S.aba = b.dataset.aba; render(); });
-  const bu = $('#busca', el); bu.oninput = () => { S.busca = bu.value; const pos = bu.selectionStart; render(); const n = $('#busca'); n.focus(); n.setSelectionRange(pos, pos); };
-  ligarCartoes(el);
+  let tm; $('#busca', el).oninput = e => { S.busca = e.target.value; clearTimeout(tm); tm = setTimeout(desenhar, 120); };
+  $('#fl-ord', el).onchange = e => { setPref('ordem', e.target.value); desenhar(); };
+  $('#fl-ag', el).onchange = e => { setPref('filtroAg', e.target.value); desenhar(); };
+  const fp = $('#fl-pr', el); if (fp) fp.onchange = e => { setPref('filtroPreset', e.target.value); desenhar(); };
+  $('#fl-limpar', el).onclick = () => { S.busca = ''; setPref('filtroAg', ''); setPref('filtroPreset', ''); render(); };
   const bn = $('#b-novo', el); if (bn) bn.onclick = () => formProcesso();
   $('#b-imp', el).onclick = imprimirChefes;
 }
@@ -345,7 +438,7 @@ function abrirDetalhe(id, mostrarTudo = false) {
   const es = etapasDe(id), pr = progresso(p), dr = diario(p), sit = SITUACOES[p.situacao];
   const dias = mostrarTudo ? dr.dias : dr.dias.slice(0, dr.limite);
   modal(`
-  <div class="cab"><div style="flex:1"><h3>${h(p.cliente)}</h3><div class="sub">${h(p.servico || presetDe(p)?.nome || '')} · <span class="chip ${sit.cor}">${sit.ic} ${sit.nome.replace(/s$/, '')}</span></div></div><button class="btn ghost" data-fechar>✕</button></div>
+  <div class="cab"><div style="flex:1"><h3>${h(p.cliente)}</h3><div class="sub">${h(p.servico || presetDe(p)?.nome || '')} · <span class="chip ${sit.cor}">${sit.ic} ${sit.nome.replace(/s$/, '')}</span></div></div><button class="btn ghost" data-fechar aria-label="Fechar">✕</button></div>
   <div class="corpo">
     ${p.situacao === 'pausado' ? `<div class="aviso amarelo">⏸ Pausado${p.pausa_motivo ? ': ' + h(p.pausa_motivo) : ''}${p.retomar_em ? ` · retomar em ${fmtD(p.retomar_em)}` : ''}</div>` : ''}
     ${p.situacao === 'desistencia' ? `<div class="aviso vermelho">✕ Desistência${p.desistencia_motivo ? ': ' + h(p.desistencia_motivo) : ''}</div>` : ''}
@@ -356,7 +449,7 @@ function abrirDetalhe(id, mostrarTudo = false) {
         <div class="secao" style="margin-top:6px"><h3>Diário</h3><span class="dica">Modo: ${modoDe(p) === 'repetir' ? 'repete o último status' : 'sem movimentação'}${p.modo_diario === 'padrao' ? ' (padrão)' : ''}</span></div>
         ${admin() && ['andamento', 'pausado'].includes(p.situacao) ? `
         <div class="card" style="padding:12px;margin-bottom:10px">
-          <div style="display:flex;gap:8px;flex-wrap:wrap"><input id="n-txt" class="busca" style="max-width:none;flex:3" placeholder="O que aconteceu? (ex.: DBE feito)" list="dl-frases2"><input type="date" id="n-data" class="busca" style="flex:0 0 150px;min-width:0" value="${hoje()}"><button class="btn pri" id="b-reg">Registrar</button></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap"><input id="n-txt" class="busca" style="max-width:none;flex:3 1 220px" placeholder="O que aconteceu? (ex.: DBE feito)" list="dl-frases2"><input type="date" id="n-data" class="busca" style="flex:0 0 150px;min-width:0" value="${hoje()}"><button class="btn pri" id="b-reg">Registrar</button></div>
           ${frasesHTML('n-txt')}
           <datalist id="dl-frases2">${S.config.frases.map(f => `<option value="${h(f)}">`).join('')}</datalist></div>` : ''}
         <div class="diario">${dias.map(d => d.auto
@@ -396,11 +489,11 @@ function abrirDetalhe(id, mostrarTudo = false) {
   ligarFrases('n-txt');
   const br = $('#b-reg', m); if (br) br.onclick = async () => { const t = $('#n-txt').value.trim(); if (!t) return $('#n-txt').focus(); if (await acao(() => registrar(id, t, { data: $('#n-data').value || hoje() }), 'Registrado')) abrirDetalhe(id); };
   const nt = $('#n-txt', m); if (nt) nt.onkeydown = e => { if (e.key === 'Enter') br.click(); };
-  $$('[data-delreg]', m).forEach(b => b.onclick = async () => { if (confirm('Apagar este registro do diário?') && await acao(() => DB.del(T.atual, 'id', b.dataset.delreg), 'Registro apagado')) abrirDetalhe(id); });
+  $$('[data-delreg]', m).forEach(b => b.onclick = async () => { if (await confirmar('Apagar este registro do diário?') && await acao(() => DB.del(T.atual, 'id', b.dataset.delreg), 'Registro apagado')) abrirDetalhe(id); });
   $$('[data-et]', m).forEach(pa => pa.onclick = ev => menuEtapa(ev, p, es.find(e => e.id === pa.dataset.et)));
   $('#b-editar', m).onclick = () => formProcesso(p);
   $('#b-email', m).onclick = () => formAlerta([p], `Atualização: ${p.cliente}`);
-  $('#b-excluir', m).onclick = async () => { if (confirm(`Excluir definitivamente o processo de ${p.cliente}? (Para tirar da lista sem apagar, use Arquivar.)`) && await acao(() => DB.del(T.processos, 'id', id), 'Processo excluído')) fecharModal(); };
+  $('#b-excluir', m).onclick = async () => { if (await confirmar(`Excluir definitivamente o processo de ${p.cliente}? (Para tirar da lista sem apagar, use Arquivar.)`) && await acao(() => DB.del(T.processos, 'id', id), 'Processo excluído')) fecharModal(); };
   const bp = $('#b-pausar', m); if (bp) bp.onclick = () => formPausa(p);
   const bd = $('#b-desist', m); if (bd) bd.onclick = () => formDesistencia(p);
   const bf = $('#b-final', m); if (bf) bf.onclick = () => formFinalizar(p);
@@ -428,12 +521,12 @@ function menuEtapa(ev, p, e) {
     }, 'Etapa atualizada');
     if (!ok) return;
     const pr = progresso(S.processos.find(x => x.id === p.id));
-    if (pr.total && pr.ok === pr.total && p.situacao === 'andamento') { abrirDetalhe(p.id); if (confirm('Todas as etapas foram concluídas. Finalizar o processo agora?')) formFinalizar(p); }
+    if (pr.total && pr.ok === pr.total && p.situacao === 'andamento') { abrirDetalhe(p.id); if (await confirmar('Todas as etapas foram concluídas. Finalizar o processo agora?')) formFinalizar(p); }
     else abrirDetalhe(p.id);
   });
 }
 function formPausa(p) {
-  modal(`<div class="cab"><h3>⏸ Pausar — ${h(p.cliente)}</h3><button class="btn ghost" data-fechar>✕</button></div>
+  modal(`<div class="cab"><h3>⏸ Pausar — ${h(p.cliente)}</h3><button class="btn ghost" data-fechar aria-label="Fechar">✕</button></div>
   <div class="corpo"><div class="form">
     <div class="campo c6"><label>Motivo da pausa</label><input id="pm" placeholder="Ex.: Cris pediu para pausar; cliente viajando…"></div>
     <div class="campo"><label>Retomar em (lembrete, opcional)</label><input type="date" id="pr"></div>
@@ -443,7 +536,7 @@ function formPausa(p) {
     if (await acao(async () => { await DB.upd(T.processos, p.id, { situacao: 'pausado', pausa_motivo: mo || null, retomar_em: re }); await registrar(p.id, '⏸ Processo pausado' + (mo ? ': ' + mo : '') + (re ? ` (retomar em ${fmtD(re)})` : ''), { tipo: 'pausa' }); }, 'Processo pausado')) abrirDetalhe(p.id); };
 }
 function formDesistencia(p) {
-  modal(`<div class="cab"><h3>✕ Desistência — ${h(p.cliente)}</h3><button class="btn ghost" data-fechar>✕</button></div>
+  modal(`<div class="cab"><h3>✕ Desistência — ${h(p.cliente)}</h3><button class="btn ghost" data-fechar aria-label="Fechar">✕</button></div>
   <div class="corpo"><div class="form"><div class="campo c6"><label>Motivo</label><input id="dm" placeholder="Ex.: cliente desistiu após o orçamento; CPL indeferida…"></div>
   <div class="campo"><label>Data</label><input type="date" id="dd" value="${hoje()}"></div></div></div>
   <div class="rod"><button class="btn" data-fechar>Cancelar</button><button class="btn dang" id="ok">Registrar desistência</button></div>`);
@@ -451,7 +544,7 @@ function formDesistencia(p) {
     if (await acao(async () => { await DB.upd(T.processos, p.id, { situacao: 'desistencia', desistencia_motivo: mo || null, data_conclusao: d }); await registrar(p.id, '✕ Desistência' + (mo ? ': ' + mo : ''), { tipo: 'desistencia', data: d }); }, 'Desistência registrada')) abrirDetalhe(p.id); };
 }
 function formFinalizar(p) {
-  modal(`<div class="cab"><h3>✔ Finalizar — ${h(p.cliente)}</h3><button class="btn ghost" data-fechar>✕</button></div>
+  modal(`<div class="cab"><h3>✔ Finalizar — ${h(p.cliente)}</h3><button class="btn ghost" data-fechar aria-label="Fechar">✕</button></div>
   <div class="corpo"><div class="form">
     <div class="campo c2"><label>Data de conclusão</label><input type="date" id="fd" value="${hoje()}"></div>
     <div class="campo c2"><label>Gratificação (R$)</label><input type="number" step="0.01" id="fg" value="${p.gratificacao ?? ''}"></div>
@@ -485,12 +578,12 @@ function perguntarNovoPreset(lista, base, { forcar = false, cliente = '' } = {})
     const igual = presetIgual(lista);
     const d = base ? diffEtapas(base.etapas, lista) : null;
     modal(`<div class="cab"><div style="flex:1"><h3>${forcar ? '💾 Salvar esteira como preset' : '✨ Esta esteira ficou diferente do preset'}</h3>
-      <div class="sub">${base ? `Preset escolhido: <b>${h(base.nome)}</b> — ele não será alterado.` : 'Nenhum preset escolhido.'}</div></div><button class="btn ghost" data-fechar>✕</button></div>
+      <div class="sub">${base ? `Preset escolhido: <b>${h(base.nome)}</b> — ele não será alterado.` : 'Nenhum preset escolhido.'}</div></div><button class="btn ghost" data-fechar aria-label="Fechar">✕</button></div>
     <div class="corpo">
       ${d ? `<div class="aviso azul">${[d.add.length ? `➕ Adicionadas: ${d.add.map(h).join(', ')}` : '', d.rem.length ? `➖ Removidas: ${d.rem.map(h).join(', ')}` : '', d.ordem ? '↕ Ordem das etapas mudou' : ''].filter(Boolean).join('<br>') || 'Nomes ou prazos alterados.'}</div>` : ''}
       ${igual ? `<div class="aviso amarelo">Essa esteira é <b>igual</b> ao preset <b>${h(igual.nome)}</b> (mesmas etapas, mesma ordem). Para não duplicar, use esse preset.</div>` : `
       <div class="form"><div class="campo c6"><label>Nome do novo preset</label><input id="np-nome" placeholder="Ex.: Alteração Contratual RCPJ - Sócio" value="${h(base ? base.nome + ' (variação)' : '')}"></div></div>
-      <ol style="font-size:13px;color:#384556;margin:12px 0 0">${lista.map(e => `<li>${h(e.nome)}${e.prazo ? ` <small style="color:var(--sub)">· ${h(e.prazo)}</small>` : ''}</li>`).join('')}</ol>`}
+      <ol style="font-size:13px;color:var(--sub2);margin:12px 0 0">${lista.map(e => `<li>${h(e.nome)}${e.prazo ? ` <small style="color:var(--sub)">· ${h(e.prazo)}</small>` : ''}</li>`).join('')}</ol>`}
     </div>
     <div class="rod">
       <button class="btn" id="np-nao">${forcar ? 'Cancelar' : 'Não, só salvar o processo'}</button>
@@ -508,7 +601,7 @@ function perguntarNovoPreset(lista, base, { forcar = false, cliente = '' } = {})
         await DB.ins(T.presets, { id, nome, cor: base?.cor || '#a23133', descricao: cliente ? `Criado a partir da esteira de ${cliente}` : null, ordem: S.presets.length, etapas: lista.map(e => ({ nome: e.nome.trim(), descricao: e.descricao || '', prazo: e.prazo || '' })), criado_em: new Date().toISOString() });
         S.presets.push({ id, nome, cor: base?.cor || '#a23133', etapas: lista.map(e => ({ nome: e.nome.trim(), descricao: e.descricao || '', prazo: e.prazo || '' })) });
         toast(`Preset "${nome}" criado`); fim({ acao: 'novo', id });
-      } catch (err) { alert('Não foi possível criar o preset: ' + (err.message || err)); }
+      } catch (err) { avisar('Não foi possível criar o preset: ' + (err.message || err)); }
     };
   });
 }
@@ -520,7 +613,7 @@ function frasesHTML(id) {
 }
 async function salvarFrases(lista) {
   const antes = S.config.frases; S.config.frases = lista;
-  try { await DB.salvaConfig({ ...S.config, frases: lista }); } catch (e) { S.config.frases = antes; alert('Não foi possível salvar a opção: ' + (e.message || e)); return false; }
+  try { await DB.salvaConfig({ ...S.config, frases: lista }); } catch (e) { S.config.frases = antes; avisar('Não foi possível salvar a opção: ' + (e.message || e)); return false; }
   $$('datalist[id^="dl-frases"]').forEach(dl => dl.innerHTML = lista.map(f => `<option value="${h(f)}">`).join(''));
   return true;
 }
@@ -529,7 +622,7 @@ function ligarFrases(id) {
   const redesenha = () => { box.outerHTML = frasesHTML(id); ligarFrases(id); };
   $$('[data-fr]', box).forEach(b => b.onclick = () => { inp.value = b.dataset.fr; inp.focus(); });
   $$('[data-frx]', box).forEach(b => b.onclick = async () => {
-    if (!confirm(`Remover "${b.dataset.frx}" das opções de status?`)) return;
+    if (!(await confirmar(`Remover "${b.dataset.frx}" das opções de status?`))) return;
     if (await salvarFrases(S.config.frases.filter(f => f !== b.dataset.frx))) { toast('Opção removida'); redesenha(); }
   });
   const add = box.querySelector('[data-fradd]');
@@ -553,7 +646,7 @@ async function formProcesso(p = null, opts = {}) {
   let etapas = novo ? [] : etapasDe(p.id).map(e => ({ ...e }));
   const opt = (arr, v) => arr.map(([k, n]) => `<option value="${h(k)}" ${k === v ? 'selected' : ''}>${h(n)}</option>`).join('');
   modal(`
-  <div class="cab"><h3>${novo ? 'Novo processo na esteira' : 'Editar — ' + h(p.cliente)}</h3><button class="btn ghost" data-fechar>✕</button></div>
+  <div class="cab"><h3>${novo ? 'Novo processo na esteira' : 'Editar — ' + h(p.cliente)}</h3><button class="btn ghost" data-fechar aria-label="Fechar">✕</button></div>
   <div class="corpo">
     <div class="form">
       <div class="campo c4"><label>Cliente *</label><input id="f-cliente" value="${h(p.cliente || '')}" list="dl-clientes" placeholder="Nome da empresa ou pessoa"></div>
@@ -620,19 +713,19 @@ async function formProcesso(p = null, opts = {}) {
   };
   desenha();
   if ($('#f-st0')) ligarFrases('f-st0');
-  $('#b-aplicar').onclick = () => {
+  $('#b-aplicar').onclick = async () => {
     const pr = S.presets.find(x => x.id === $('#f-preset').value); if (!pr) return toast('Escolha um preset');
-    if (etapas.length && !confirm('Substituir a esteira atual pelas etapas do preset?')) return;
+    if (etapas.length && !(await confirmar('Substituir a esteira atual pelas etapas do preset?'))) return;
     etapas = (pr.etapas || []).map(e => ({ nome: e.nome, descricao: e.descricao, prazo: e.prazo, status: 'pendente' }));
     if (!$('#f-serv').value) $('#f-serv').value = pr.nome;
     desenha();
   };
   $('#f-preset').onchange = () => { if (!etapas.length) $('#b-aplicar').click(); };
   const atualizarSelectPreset = sel => { $('#f-preset').innerHTML = `<option value="">— escolher preset —</option>` + S.presets.map(x => `<option value="${x.id}">${h(x.nome)} (${(x.etapas || []).length} etapas)</option>`).join(''); $('#f-preset').value = sel || ''; };
-  $('#b-novopreset').onclick = () => formPreset(null, novoId => {
+  $('#b-novopreset').onclick = () => formPreset(null, async novoId => {
     $('#f-preset').innerHTML = `<option value="">— escolher preset —</option>` + S.presets.map(x => `<option value="${x.id}">${h(x.nome)} (${(x.etapas || []).length} etapas)</option>`).join('');
     $('#f-preset').value = novoId; desenha();
-    if (!etapas.length || confirm('Carregar as etapas do preset novo nesta esteira?')) { etapas = []; $('#b-aplicar').click(); }
+    if (!etapas.length || await confirmar('Carregar as etapas do preset novo nesta esteira?')) { etapas = []; $('#b-aplicar').click(); }
   });
   $('#b-salvar').onclick = async () => {
     const cliente = $('#f-cliente').value.trim(); if (!cliente) { $('#f-cliente').focus(); return toast('Informe o cliente'); }
@@ -680,7 +773,7 @@ function vCardapio(el) {
     <button class="btn pri adm" id="b-novo">＋ Novo preset</button>
     <div class="sub">Cada preset é o roteiro padrão de um serviço. Ao colocar um cliente na esteira você escolhe o preset e ajusta as etapas para aquele caso.</div></div>
   ${S.presets.length ? `<div class="grade">${S.presets.map(x => `
-    <div class="card preset" style="--cor:${h(x.cor || '#1f6feb')}">
+    <div class="card preset" style="--cor:${h(x.cor || '#a23133')}">
       <h4>${h(x.nome)}</h4><div class="desc">${h(x.descricao || '')}</div>
       <ol>${(x.etapas || []).map(e => `<li>${h(e.nome)}${e.prazo ? ` <small style="color:var(--sub)">· ${h(e.prazo)}</small>` : ''}</li>`).join('')}</ol>
       <div class="acoes adm"><button class="btn sm" data-ed="${x.id}">✎ Editar</button><button class="btn sm" data-dup="${x.id}">⧉ Duplicar</button><button class="btn sm dang" data-del="${x.id}">Excluir</button>
@@ -690,19 +783,19 @@ function vCardapio(el) {
   const bn = $('#b-novo', el); if (bn) bn.onclick = () => formPreset();
   $$('[data-ed]', el).forEach(b => b.onclick = () => formPreset(S.presets.find(x => x.id === b.dataset.ed)));
   $$('[data-dup]', el).forEach(b => b.onclick = () => { const x = S.presets.find(y => y.id === b.dataset.dup); formPreset({ ...x, id: null, nome: x.nome + ' (cópia)' }); });
-  $$('[data-del]', el).forEach(b => b.onclick = () => { const x = S.presets.find(y => y.id === b.dataset.del); if (confirm(`Excluir o preset "${x.nome}"? Os processos que já usam ele continuam com as etapas deles.`)) acao(() => DB.del(T.presets, 'id', x.id), 'Preset excluído'); });
+  $$('[data-del]', el).forEach(b => b.onclick = async () => { const x = S.presets.find(y => y.id === b.dataset.del); if (await confirmar(`Excluir o preset "${x.nome}"? Os processos que já usam ele continuam com as etapas deles.`)) acao(() => DB.del(T.presets, 'id', x.id), 'Preset excluído'); });
 }
 function carregarSugeridos() {
   const sug = window.LEG_PRESETS_SUGERIDOS || [];
   return acao(() => DB.ins(T.presets, sug.map((x, i) => ({ id: uid(), nome: x.nome, descricao: x.descricao || null, cor: x.cor, ordem: i, etapas: x.etapas.map(e => ({ nome: e.nome, descricao: e.descricao || '', prazo: e.prazo || '' })), criado_em: new Date().toISOString() }))), `${sug.length} presets carregados`);
 }
 function formPreset(x = null, aoSalvar = null) {
-  const novo = !x || !x.id; x = x || { nome: '', cor: '#1f6feb', etapas: [] }; const L = aoSalvar ? 2 : 1; const R = L === 2 ? '#modal-root2 ' : '#modal-root ';
+  const novo = !x || !x.id; x = x || { nome: '', cor: '#a23133', etapas: [] }; const L = aoSalvar ? 2 : 1; const R = L === 2 ? '#modal-root2 ' : '#modal-root ';
   let etapas = (x.etapas || []).map(e => ({ ...e })); let aposDesenhar = () => {};
-  modal(`<div class="cab"><h3>${novo ? 'Novo preset' : 'Editar preset'}</h3><button class="btn ghost" data-fechar>✕</button></div>
+  modal(`<div class="cab"><h3>${novo ? 'Novo preset' : 'Editar preset'}</h3><button class="btn ghost" data-fechar aria-label="Fechar">✕</button></div>
   <div class="corpo"><div class="form">
     <div class="campo c4"><label>Nome do serviço *</label><input id="p-nome" value="${h(x.nome)}" placeholder="Ex.: Alteração de Endereço"></div>
-    <div class="campo c2"><label>Cor</label><input type="color" id="p-cor" value="${h(x.cor || '#1f6feb')}" style="height:40px;padding:3px"></div>
+    <div class="campo c2"><label>Cor</label><input type="color" id="p-cor" list="paleta-jopec" value="${h(x.cor || '#a23133')}" style="height:40px;padding:3px"><datalist id="paleta-jopec">${['#a23133', '#75232a', '#c2611f', '#b08100', '#2f7d4f', '#1f6f78', '#2d5a9b', '#6a4c93', '#8a5a44', '#5b5f66'].map(c => `<option value="${c}">`).join('')}</datalist></div>
     <div class="campo c6"><label>Descrição</label><input id="p-desc" value="${h(x.descricao || '')}"></div>
     ${novo ? `<div class="campo c6"><label>Começar a partir de outro preset (esqueleto)</label>
       <select id="p-base"><option value="">— começar do zero —</option>${S.presets.map(y => `<option value="${y.id}">${h(y.nome)} (${(y.etapas || []).length} etapas)</option>`).join('')}</select>
@@ -729,9 +822,9 @@ function formPreset(x = null, aoSalvar = null) {
   aposDesenhar = () => { checaDup(); $$(R + '#ed-p [data-k="nome"]').forEach(i => i.addEventListener('input', checaDup)); };
   const desenha2 = desenha;
   desenha2();
-  const pb = $(R + '#p-base'); if (pb) pb.onchange = () => {
+  const pb = $(R + '#p-base'); if (pb) pb.onchange = async () => {
     const y = S.presets.find(z => z.id === pb.value); if (!y) return;
-    if (etapas.some(e => e.nome.trim()) && !confirm('Substituir as etapas atuais pelas do preset escolhido?')) { pb.value = ''; return; }
+    if (etapas.some(e => e.nome.trim()) && !(await confirmar('Substituir as etapas atuais pelas do preset escolhido?'))) { pb.value = ''; return; }
     etapas = (y.etapas || []).map(e => ({ ...e })); if (!$(R + '#p-cor').dataset.mexeu) $(R + '#p-cor').value = y.cor || '#a23133';
     desenha2(); toast('Esqueleto carregado: agora é só ajustar');
   };
@@ -740,7 +833,7 @@ function formPreset(x = null, aoSalvar = null) {
     const nome = $(R + '#p-nome').value.trim(); if (!nome) return toast('Informe o nome do serviço');
     if (S.presets.some(y => y.id !== x.id && normEt(y.nome) === normEt(nome))) return toast('Já existe um preset com esse nome');
     const ig = presetIgual(etapas, novo ? null : x.id);
-    if (ig && !confirm(`O preset "${ig.nome}" já tem exatamente essas etapas, na mesma ordem.\n\nSalvar mesmo assim (vai ficar duplicado)?`)) return;
+    if (ig && !(await confirmar(`O preset "${ig.nome}" já tem exatamente essas etapas, na mesma ordem.\n\nSalvar mesmo assim (vai ficar duplicado)?`))) return;
     const dados = { nome, cor: $(R + '#p-cor').value, descricao: $(R + '#p-desc').value.trim() || null, etapas: etapas.filter(e => e.nome.trim()).map(e => ({ nome: e.nome.trim(), descricao: e.descricao || '', prazo: e.prazo || '' })) };
     const nid = novo ? uid() : x.id;
     if (await acao(() => novo ? DB.ins(T.presets, { id: nid, ...dados, ordem: S.presets.length, criado_em: new Date().toISOString() }) : DB.upd(T.presets, x.id, dados), 'Preset salvo')) { fecharModal(L); if (aoSalvar) aoSalvar(nid); }
@@ -776,11 +869,28 @@ function vRelatorio(el) {
 function baixar(nome, conteudo, tipo) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([conteudo], { type: tipo })); a.download = nome; a.click(); }
 
 // ---------------------------------------------------------------- CONFIGURAÇÕES
+function blocoAparencia() {
+  const op = (id, atual, lista) => `<div class="seg" role="radiogroup" id="${id}">${lista.map(([v, rot, i]) => `<button type="button" role="radio" aria-checked="${atual === v}" class="${atual === v ? 'on' : ''}" data-v="${v}">${i ? ic(i, 15) : ''}${rot}</button>`).join('')}</div>`;
+  return `<div class="secao"><h3>Aparência</h3><span class="dica">Vale só para este aparelho. Cada pessoa escolhe a sua.</span></div>
+  <div class="card prefs">
+    <div class="pref"><div><b>Tema</b><small>O automático acompanha o modo claro/escuro do celular ou computador.</small></div>${op('pf-tema', pref('tema'), [['auto', 'Automático', 'auto'], ['claro', 'Claro', 'sol'], ['escuro', 'Escuro', 'lua']])}</div>
+    <div class="pref"><div><b>Densidade</b><small>Compacta mostra mais processos por tela.</small></div>${op('pf-dens', pref('densidade'), [['normal', 'Confortável'], ['compacta', 'Compacta']])}</div>
+    <div class="pref"><div><b>Abrir o app em</b><small>Tela que aparece ao entrar.</small></div>${op('pf-ini', pref('inicio'), [['painel', 'Painel do dia'], ['processos', 'Processos']])}</div>
+  </div>`;
+}
+function ligarAparencia(el) {
+  const liga = (id, k, depois) => $$(`#${id} [data-v]`, el).forEach(b => b.onclick = () => { setPref(k, b.dataset.v); $$(`#${id} [data-v]`, el).forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-checked', x === b); }); depois?.(); toast('Preferência salva'); });
+  liga('pf-tema', 'tema', () => { aplicarTema(); const bt = $('#b-tema'); if (bt) { bt.outerHTML = botaoTema(); ligarTema(); } });
+  liga('pf-dens', 'densidade', aplicarTema);
+  liga('pf-ini', 'inicio');
+}
 function vConfig(el) {
-  if (!admin()) { S.view = 'painel'; return render(); }
+  if (!admin()) { el.innerHTML = `<div class="topo"><h2>Ajustes</h2></div>${blocoAparencia()}`; return ligarAparencia(el); }
   const c = S.config;
   el.innerHTML = `
   <div class="topo"><h2>Configurações</h2></div>
+  ${blocoAparencia()}
+  <div class="secao"><h3>Regras do controle</h3><span class="dica">Valem para todo mundo.</span></div>
   <div class="card" style="padding:18px;max-width:820px">
     <div class="form">
       <div class="campo c6"><label>Quando eu não escrever nada no dia, o diário deve…</label>
@@ -810,13 +920,14 @@ function vConfig(el) {
     email_para: $('#c-para').value.trim(), email_cc: $('#c-cc').value.trim(), email_remetente: $('#c-rem').value.trim(),
     responsaveis: $('#c-resp').value.split('\n').map(s => s.trim()).filter(Boolean), frases: $('#c-fr').value.split('\n').map(s => s.trim()).filter(Boolean),
   }), 'Configurações salvas');
+  ligarAparencia(el);
   desenharLinkPublico();
   $('#c-bkp', el).onclick = () => baixar(`legalizacao-backup-${hoje()}.json`, JSON.stringify({ presets: S.presets, processos: S.processos, etapas: S.etapas, atualizacoes: S.atual, config: S.config }, null, 1), 'application/json');
   $('#c-sug', el).onclick = carregarSugeridos;
   $('#c-rest', el).onchange = async ev => {
     const f = ev.target.files[0]; if (!f) return;
     const b = JSON.parse(await f.text());
-    if (!confirm(`Restaurar backup com ${b.processos?.length || 0} processos? Itens com o mesmo ID serão ignorados.`)) return;
+    if (!(await confirmar(`Restaurar backup com ${b.processos?.length || 0} processos? Itens com o mesmo ID serão ignorados.`))) return;
     acao(async () => {
       const ids = t => new Set(S[t].map(x => x.id));
       const novos = (arr, t) => (arr || []).filter(x => !ids(t).has(x.id));
@@ -859,10 +970,10 @@ function vTriagem(el) {
   const pref = x => ({ cliente: x.cliente, tipo_cliente: TIPOS_CLIENTE.includes(x.tipo) ? x.tipo : 'EMPRESA', servico: x.servico, data_inicio: x.data || hoje(), observacoes: `Vindo da planilha. Último status: ${x.status || '—'}` });
   $$('[data-ver]', el).forEach(b => b.onclick = () => abrirDetalhe(b.dataset.ver));
   $$('[data-desfaz]', el).forEach(b => b.onclick = () => { const t = { ...(S.config.triagem || {}) }; const pid = t[b.dataset.desfaz]?.pid; delete t[b.dataset.desfaz];
-    acao(async () => { await DB.salvaConfig({ ...S.config, triagem: t }); if (pid && confirm('Excluir também o processo que foi criado nesta triagem?')) await DB.del(T.processos, 'id', pid); }, 'Triagem desfeita'); });
+    acao(async () => { await DB.salvaConfig({ ...S.config, triagem: t }); if (pid && await confirmar('Excluir também o processo que foi criado nesta triagem?')) await DB.del(T.processos, 'id', pid); }, 'Triagem desfeita'); });
   $$('[data-ign]', el).forEach(b => b.onclick = () => acao(() => marcarTriado(b.dataset.ign, { acao: 'ignorado' }), 'Ignorado'));
-  $$('[data-exc]', el).forEach(b => b.onclick = () => { const x = item(b.dataset.exc);
-    if (!confirm(`Excluir "${x.cliente}" da lista de triagem?\n\nO item some da triagem de vez. Processos que você já criou a partir dele continuam no app.`)) return;
+  $$('[data-exc]', el).forEach(b => b.onclick = async () => { const x = item(b.dataset.exc);
+    if (!(await confirmar(`Excluir "${x.cliente}" da lista de triagem?\n\nO item some da triagem de vez. Processos que você já criou a partir dele continuam no app.`))) return;
     acao(async () => {
       await DB.salvaChave('pendencias', PEND().filter(y => y.chave !== x.chave));
       const t = { ...(S.config.triagem || {}) }; if (t[x.chave]) { delete t[x.chave]; await DB.salvaConfig({ ...S.config, triagem: t }); }
@@ -870,7 +981,7 @@ function vTriagem(el) {
   $$('[data-est]', el).forEach(b => b.onclick = () => { const x = item(b.dataset.est);
     formProcesso(null, { prefill: pref(x), status: x.status, antesDeSalvar: pid => marcarTriado(x.chave, { acao: 'esteira', pid }), depois: () => { fecharModal(); toast(`${x.cliente} na esteira`); } }); });
   $$('[data-fin]', el).forEach(b => b.onclick = () => { const x = item(b.dataset.fin);
-    modal(`<div class="cab"><h3>✔ ${h(x.cliente)} já foi finalizado</h3><button class="btn ghost" data-fechar>✕</button></div>
+    modal(`<div class="cab"><h3>✔ ${h(x.cliente)} já foi finalizado</h3><button class="btn ghost" data-fechar aria-label="Fechar">✕</button></div>
     <div class="corpo">${x.dica ? `<div class="aviso azul">${h(x.dica)}: se você importou o histórico, ele já está lá. Escolha "Só marcar como resolvido" para não duplicar.</div>` : ''}
     <div class="form">
       <div class="campo c6"><label>O que fazer</label><select id="t-modo"><option value="criar" ${x.dica ? '' : 'selected'}>Registrar como finalizado no app (entra no relatório do mês)</option><option value="historico" ${x.dica ? 'selected' : ''}>Só marcar como resolvido (já está no histórico)</option></select></div>
@@ -890,7 +1001,7 @@ function vTriagem(el) {
       }, 'Marcado como finalizado')) fecharModal();
     }; });
   const simples = (attr, sit, titulo, campoMotivo, campoData) => $$(`[${attr}]`, el).forEach(b => b.onclick = () => { const x = item(b.getAttribute(attr));
-    modal(`<div class="cab"><h3>${titulo} — ${h(x.cliente)}</h3><button class="btn ghost" data-fechar>✕</button></div>
+    modal(`<div class="cab"><h3>${titulo} — ${h(x.cliente)}</h3><button class="btn ghost" data-fechar aria-label="Fechar">✕</button></div>
     <div class="corpo"><div class="form"><div class="campo c4"><label>Motivo</label><input id="t-mot" value="${sit === 'pausado' ? h(x.status) : ''}"></div>
     <div class="campo c2"><label>${campoData}</label><input type="date" id="t-dt" ${sit === 'desistencia' ? `value="${hoje()}"` : ''}></div></div>
     <p style="color:var(--sub);font-size:12.5px">${sit === 'pausado' ? 'Dica: depois você pode abrir o processo em Editar e montar a esteira com o preset, para retomar já no ponto certo.' : ''}</p></div>
@@ -912,7 +1023,7 @@ function escolherAlerta() {
   const and = S.processos.filter(p => ['andamento', 'pausado'].includes(p.situacao));
   const hojeMov = S.processos.filter(p => atualDe(p.id).some(a => a.data === hoje() && a.tipo !== 'sistema'));
   const parados = and.filter(p => p.situacao === 'andamento' && diasParado(p) >= S.config.alerta_dias);
-  modal(`<div class="cab"><h3>✉ Enviar alerta</h3><button class="btn ghost" data-fechar>✕</button></div>
+  modal(`<div class="cab"><h3>✉ Enviar alerta</h3><button class="btn ghost" data-fechar aria-label="Fechar">✕</button></div>
   <div class="corpo"><p style="margin-top:0">O que entra no e-mail?</p>
     <div style="display:grid;gap:8px">
       <button class="btn" data-op="hoje" style="justify-content:space-between">Só o que teve atualização hoje <span class="chip azul">${hojeMov.length}</span></button>
@@ -995,7 +1106,7 @@ async function formAlerta(lista, titulo) {
   let link = '';
   try { if (!MODO_DEMO) { const r = await sb.from('leg_link_publico').select('token').eq('ativo', true).limit(1); if (r.data && r.data[0]) link = urlPublica(r.data[0].token); } } catch {}
   let { assunto, texto, html } = montarEmail(lista, titulo, { link });
-  modal(`<div class="cab"><div style="flex:1"><h3>✉ Alerta por e-mail</h3><div class="sub">De ${h(S.config.email_remetente)} · ${lista.length} processo(s)</div></div><button class="btn ghost" data-fechar>✕</button></div>
+  modal(`<div class="cab"><div style="flex:1"><h3>✉ Alerta por e-mail</h3><div class="sub">De ${h(S.config.email_remetente)} · ${lista.length} processo(s)</div></div><button class="btn ghost" data-fechar aria-label="Fechar">✕</button></div>
   <div class="corpo"><div class="form">
     <div class="campo c6"><label>Para</label><input id="e-para" value="${h(S.config.email_para)}"></div>
     <div class="campo c6"><label>Cópia (CC)</label><input id="e-cc" value="${h(S.config.email_cc)}"></div>
@@ -1031,7 +1142,7 @@ async function formAlerta(lista, titulo) {
         throw new Error(msg);
       }
       fecharModal(); toast('E-mail enviado para os chefes ✔');
-    } catch (err) { b.disabled = false; b.textContent = 'Enviar agora'; alert('Não foi possível enviar: ' + err.message + '\n\nUse "Abrir no Gmail" enquanto isso.'); }
+    } catch (err) { b.disabled = false; b.textContent = 'Enviar agora'; avisar('Não foi possível enviar: ' + err.message + '\n\nUse "Abrir no Gmail" enquanto isso.'); }
   };
 }
 
@@ -1049,7 +1160,7 @@ async function desenharLinkPublico() {
     <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="btn" id="lk-novo">↻ Gerar link novo (o atual para de funcionar)</button><button class="btn dang" id="lk-off">Desativar link</button></div>`
     : `<p style="margin-top:0">Nenhum link público ativo.</p><button class="btn pri" id="lk-novo">Gerar link público</button>`;
   const novoToken = () => [...crypto.getRandomValues(new Uint8Array(18))].map(b => 'abcdefghijkmnpqrstuvwxyz23456789'[b % 32]).join('');
-  const salvar = async (fn) => { try { await fn(); desenharLinkPublico(); } catch (e) { alert('Não foi possível: ' + (e.message || e)); } };
+  const salvar = async (fn) => { try { await fn(); desenharLinkPublico(); } catch (e) { avisar('Não foi possível: ' + (e.message || e)); } };
   const bc = $('#lk-copiar'); if (bc) bc.onclick = async () => { try { await navigator.clipboard.writeText($('#lk-url').value); toast('Link copiado'); } catch { $('#lk-url').select(); document.execCommand('copy'); toast('Link copiado'); } };
   $('#lk-novo').onclick = () => salvar(async () => {
     const t = novoToken();
@@ -1058,7 +1169,7 @@ async function desenharLinkPublico() {
     const { error } = await sb.from('leg_link_publico').insert({ token: t, ativo: true }); if (error) throw error;
     toast('Link novo gerado');
   });
-  const bo = $('#lk-off'); if (bo) bo.onclick = () => { if (confirm('Desativar o link público? Quem tiver o link não verá mais nada.')) salvar(async () => {
+  const bo = $('#lk-off'); if (bo) bo.onclick = async () => { if (await confirmar('Desativar o link público? Quem tiver o link não verá mais nada.')) salvar(async () => {
     if (MODO_DEMO) { const db = DB.demo(); db.leg_link_publico = []; DB.salvaDemo(db); return; }
     const { error } = await sb.from('leg_link_publico').update({ ativo: false }).eq('ativo', true); if (error) throw error; toast('Link desativado'); }); };
 }
@@ -1088,7 +1199,7 @@ async function telaPublica(token) {
     const abas = ['andamento', 'pausado', 'finalizado', 'desistencia'];
     $('#app').innerHTML = `
     <div class="shell"><header class="band"><div class="wrap topbar"><div class="brand">${LOGO_MARCA}<div>${LOGO_NOME}<h1>Legalização · Andamento dos processos</h1></div></div>
-      <div class="usr"><span class="papel">👁 Somente leitura</span></div></div></header>
+      <div class="usr"><span class="papel">👁 Somente leitura</span>${botaoTema()}</div></div></header>
     <main class="main wrap">
       <div class="topo"><h2>Andamento dos processos</h2><input class="busca" id="pb" placeholder="Buscar empresa ou serviço…" value="${h(PS.busca)}">
         <div class="sub">Atualizado em ${new Date(dados.gerado).toLocaleString('pt-BR')} · atualize a página para ver as últimas mudanças</div></div>
@@ -1110,6 +1221,7 @@ async function telaPublica(token) {
         </div>`; }).join('')}</div>` : '<div class="card vazio">Nada por aqui.</div>'}
     </main></div>`;
     $$('[data-pa]').forEach(b => b.onclick = () => { PS.aba = b.dataset.pa; desenhar(); });
+    ligarTema();
     const pb = $('#pb'); pb.oninput = () => { PS.busca = pb.value; const pos = pb.selectionStart; desenhar(); const n = $('#pb'); n.focus(); n.setSelectionRange(pos, pos); };
   };
   desenhar();
@@ -1122,8 +1234,10 @@ function modal(html, cls = '', camada = 1) {
   $(R).innerHTML = `<div class="fundo"><div class="modal ${cls}">${html}</div></div>`;
   $$(R + ' [data-fechar]').forEach(b => b.onclick = () => fecharModal(camada));
   $(R + ' .fundo').onmousedown = e => { if (e.target.classList.contains('fundo')) fecharModal(camada); };
+  document.body.classList.add('com-modal');
+  $(R + ' .modal').setAttribute('role', 'dialog'); $(R + ' .modal').setAttribute('aria-modal', 'true');
 }
-function fecharModal(camada = 1) { if (camada === 2) $('#modal-root2').innerHTML = ''; else { $('#modal-root').innerHTML = ''; $('#modal-root2').innerHTML = ''; } }
+function fecharModal(camada = 1) { if (camada === 2) $('#modal-root2').innerHTML = ''; else { $('#modal-root').innerHTML = ''; $('#modal-root2').innerHTML = ''; } if (!$('#modal-root').innerHTML) document.body.classList.remove('com-modal'); }
 document.addEventListener('keydown', e => { if (e.key !== 'Escape') return; if ($('#modal-root2').innerHTML) fecharModal(2); else if ($('#modal-root').innerHTML) fecharModal(); });
 
 // ---------------------------------------------------------------- início

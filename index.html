@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>JOPEC · Controle de Legalização</title>
 <meta name="theme-color" content="#a23133">
+<meta name="color-scheme" content="light dark">
+<script>/* aplica o tema antes de desenhar a tela (sem "piscar" branco no modo escuro) */
+try{var p=JSON.parse(localStorage.getItem('leg_pref')||'{}'),t=p.tema||'auto',e=t==='escuro'||(t==='auto'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.dataset.tema=e?'escuro':'claro';document.documentElement.dataset.densidade=p.densidade||'normal';}catch(_){}</script>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
