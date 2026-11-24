@@ -311,9 +311,10 @@ function cartao(p) {
       ${p.situacao === 'andamento' ? `<span class="chip ${alerta ? 'vermelho' : ''}">${dp === 0 ? 'movimentado hoje' : dp + (dp === 1 ? ' dia' : ' dias') + ' sem movimento'}</span>` : ''}
       ${p.situacao === 'pausado' && p.retomar_em ? `<span class="chip ${p.retomar_em <= hoje() ? 'vermelho' : 'amarelo'}">retomar ${fmtD(p.retomar_em)}</span>` : ''}
       ${p.situacao === 'finalizado' ? `<span class="chip verde">finalizado ${fmtD(p.data_conclusao)}</span>` : ''}
+      ${chipFin(p)}
     </div></div>`;
 }
-function acessivel(raiz) { setTimeout(() => $$('[data-proc]:not(a):not(button),[data-ir],[data-rel]', raiz).forEach(x => { x.tabIndex = 0; x.setAttribute('role', 'button'); }), 0); }
+function acessivel(raiz) { setTimeout(() => $$('[data-proc]:not(a):not(button),[data-ir],[data-rel],[data-relfin]', raiz).forEach(x => { x.tabIndex = 0; x.setAttribute('role', 'button'); }), 0); }
 document.addEventListener('keydown', e => { const t = e.target; if ((e.key === 'Enter' || e.key === ' ') && t.getAttribute?.('role') === 'button' && !/^(BUTTON|A|INPUT|SELECT|TEXTAREA)$/.test(t.tagName)) { e.preventDefault(); t.click(); } });
 function ligarCartoes(el) { $$('[data-proc]', el).forEach(c => c.onclick = () => abrirDetalhe(c.dataset.proc)); }
 
@@ -336,6 +337,7 @@ function vPainel(el) {
     <div class="card kpi alerta" data-ir="andamento"><div class="v">${parados.length}</div><div class="l">Parados há ${S.config.alerta_dias}+ dias</div></div>
     <div class="card kpi atenc" data-ir="andamento"><div class="v">${and.filter(p => p.aguardando === 'cliente').length}</div><div class="l">Aguardando cliente</div></div>
     <div class="card kpi atenc" data-ir="pausado"><div class="v">${S.processos.filter(p => p.situacao === 'pausado').length}</div><div class="l">Pausados${pausaVencida.length ? ` · ${pausaVencida.length} para retomar` : ''}</div></div>
+    ${(() => { const t = finTotais(finAtivos()); return t.valor ? `<div class="card kpi ${t.atraso > 0 ? 'alerta' : ''}" data-relfin="1"><div class="v">${t.nAberto}</div><div class="l">A receber · ${moeda(t.falta)}${t.nAtraso ? ` · <b class="falta">${t.nAtraso} em atraso</b>` : ''}</div></div>` : ''; })()}
     <div class="card kpi bom" data-rel="1"><div class="v">${fimMes.length}</div><div class="l">Finalizados no mês · ${moeda(fimMes.reduce((s, p) => s + (+p.gratificacao || 0), 0))} ${botaoOlho()}</div></div>
   </div>
   ${pausaVencida.length ? `<div class="aviso amarelo">⏰ Pausas com data de retomada vencida: ${pausaVencida.map(p => `<a href="#" data-proc="${p.id}">${h(p.cliente)}</a>`).join(', ')}</div>` : ''}
@@ -353,7 +355,8 @@ function vPainel(el) {
   <datalist id="dl-frases">${S.config.frases.map(f => `<option value="${h(f)}">`).join('')}</datalist>
   ${parados.length ? `<div class="secao"><h3>⚠ Precisam de atenção</h3><span class="dica">Sem movimento real há ${S.config.alerta_dias} dias ou mais</span></div><div class="grade">${parados.map(cartao).join('')}</div>` : ''}`;
   $$('[data-ir]', el).forEach(k => k.onclick = () => { S.view = 'processos'; S.aba = k.dataset.ir; render(); });
-  $$('[data-rel]', el).forEach(k => k.onclick = () => { S.view = 'relatorio'; render(); });
+  $$('[data-rel]', el).forEach(k => k.onclick = () => { S.view = 'relatorio'; S.relAba = 'mes'; render(); });
+  $$('[data-relfin]', el).forEach(k => k.onclick = () => { S.view = 'relatorio'; S.relAba = 'financeiro'; render(); });
   ligarOlho(el);
   $$('a[data-proc]', el).forEach(a => a.onclick = e => { e.preventDefault(); abrirDetalhe(a.dataset.proc); });
   ligarCartoes(el);
@@ -432,6 +435,185 @@ function imprimirChefes() {
   w.document.close();
 }
 
+// ---------------------------------------------------------------- FINANCEIRO (orçamento, pagamentos, previsões, taxas)
+const FIN_TAXAS = { cliente: 'Por conta do cliente', inclusas: 'Inclusas no orçamento', reembolso: 'JOPEC paga e cobra depois', isento: 'Sem taxas / isento' };
+const FIN_COND = { a_vista: 'À vista', entrada: 'Entrada + restante', parcelado: 'Parcelado', final: 'Na entrega', combinar: 'A combinar' };
+const FIN_FORMAS = ['PIX', 'Boleto', 'Transferência', 'Cartão', 'Dinheiro'];
+const FIN_NF = { pendente: 'A emitir', emitida: 'Emitida', na: 'Não se aplica' };
+const r2 = v => Math.round((+v || 0) * 100) / 100;
+const finDe = p => { const f = (p && typeof p.financeiro === 'object' && p.financeiro) || {}; return { reajustes: [], pagamentos: [], previsoes: [], ...f }; };
+function calcFin(p) {
+  const f = finDe(p);
+  const original = f.orcamento != null && f.orcamento !== '' ? +f.orcamento : (p.honorarios != null && p.honorarios !== '' ? +p.honorarios : null);
+  const ultR = f.reajustes.at(-1);
+  const servico = ultR ? +ultR.para : original;
+  const taxasReemb = f.taxas === 'reembolso' ? r2(f.taxas_valor) : 0;
+  const tem = servico != null;
+  const valor = tem ? r2(servico + taxasReemb) : null;
+  const pago = r2(f.pagamentos.reduce((a, x) => a + (+x.valor || 0), 0));
+  const restante = tem ? Math.max(0, r2(valor - pago)) : 0;
+  // previsões = datas e valores combinados para o que AINDA falta (cada pagamento registrado abate das mais antigas)
+  let atrasado = 0, proximo = null, programado = 0, teto = restante;
+  [...f.previsoes].sort((a, b) => (a.data || '').localeCompare(b.data || '')).forEach(x => {
+    const pend = Math.min(r2(x.valor), r2(teto)); if (pend <= 0.004) return; teto = r2(teto - pend); programado = r2(programado + pend);
+    if (x.data && x.data < hoje()) atrasado = r2(atrasado + pend); else if (!proximo) proximo = { data: x.data, valor: pend };
+  });
+  const semData = tem ? Math.max(0, r2(restante - programado)) : 0;
+  const status = !tem ? 'sem' : restante <= 0.004 ? 'quitado' : atrasado > 0 ? 'atrasado' : pago > 0 ? 'parcial' : 'aberto';
+  return { f, tem, original, servico, reajustado: !!ultR && +ultR.para !== original, taxasReemb, valor, pago, restante, pct: tem && valor > 0 ? Math.min(100, Math.round(pago / valor * 100)) : 0, atrasado, proximo, semData, status };
+}
+const FIN_ST = { sem: ['Sem orçamento', ''], aberto: ['A receber', ''], parcial: ['Pago em parte', 'amarelo'], quitado: ['Quitado', 'verde'], atrasado: ['Pagamento atrasado', 'vermelho'] };
+function chipFin(p) {
+  const c = calcFin(p); if (!c.tem) return '';
+  const [nm, cor] = FIN_ST[c.status];
+  return `<span class="chip ${cor}" title="Financeiro">💰 ${nm}${c.status !== 'quitado' ? ' · falta ' + moeda(c.restante) : ''}</span>`;
+}
+function blocoFin(p) {
+  const c = calcFin(p), f = c.f, [nm, cor] = FIN_ST[c.status];
+  const hist = [...f.pagamentos.map(x => ({ ...x, t: 'pag' })), ...f.reajustes.map(x => ({ ...x, t: 'rea' }))].sort((a, b) => (b.data || '').localeCompare(a.data || ''));
+  const prevAbertas = [...f.previsoes].sort((a, b) => (a.data || '').localeCompare(b.data || ''));
+  return `<div class="card fin" style="padding:14px;margin-top:12px">
+    <div class="fin-cab"><h4>💰 Financeiro</h4><span class="chip ${cor}">${nm}</span></div>
+    ${!c.tem ? `<p class="fin-vazio">Orçamento ainda não informado.</p>` : `
+    <div class="fin-valor">${moeda(c.valor)}${botaoOlho()}</div>
+    <div class="fin-sub">${c.reajustado ? `Reajustado · original ${moeda(c.original)}` : 'Valor do orçamento'}${c.taxasReemb ? ` · inclui ${moeda(c.taxasReemb)} de taxas a reembolsar` : ''}</div>
+    <div class="fin-bl"><div class="barra fin-barra"><div style="width:${c.pct}%"></div></div><span>${c.pct}% recebido</span></div>
+    <div class="fin-linhas"><div><small>Pago</small><b class="ok">${moeda(c.pago)}</b></div><div><small>Falta receber</small><b class="${c.restante > 0 ? 'falta' : 'ok'}">${moeda(c.restante)}</b></div></div>
+    ${c.atrasado > 0 ? `<div class="aviso vermelho fin-av">⚠ ${moeda(c.atrasado)} vencido e não pago</div>` : ''}
+    ${c.proximo ? `<div class="fin-prox">Próximo: <b>${moeda(c.proximo.valor)}</b> em <b>${fmtD(c.proximo.data)}</b></div>` : ''}
+    ${c.semData > 0 ? `<div class="aviso amarelo fin-av">${moeda(c.semData)} ainda sem data prevista de pagamento</div>` : ''}`}
+    <dl class="fin-dl">
+      <dt>Taxas</dt><dd>${f.taxas ? h(FIN_TAXAS[f.taxas]) : '—'}${f.taxas_valor ? ` <small>(${f.taxas === 'cliente' ? 'estimado ' : ''}${moeda(f.taxas_valor)})</small>` : ''}</dd>
+      ${f.condicao ? `<dt>Condição</dt><dd>${h(FIN_COND[f.condicao] || f.condicao)}</dd>` : ''}
+      ${f.forma ? `<dt>Forma</dt><dd>${h(f.forma)}</dd>` : ''}
+      ${f.nf ? `<dt>Nota fiscal</dt><dd>${h(FIN_NF[f.nf] || f.nf)}${f.nf_numero ? ' nº ' + h(f.nf_numero) : ''}</dd>` : ''}
+    </dl>
+    ${f.obs ? `<div class="fin-obs">${h(f.obs)}</div>` : ''}
+    ${prevAbertas.length ? `<details class="fin-det"><summary>Previsões de pagamento (${prevAbertas.length})</summary>${prevAbertas.map(x => `<div class="fin-it"><span>${fmtD(x.data)}</span><b>${moeda(x.valor)}</b></div>`).join('')}</details>` : ''}
+    ${hist.length ? `<details class="fin-det" open><summary>Histórico (${hist.length})</summary>${hist.map(x => x.t === 'pag'
+      ? `<div class="fin-it"><span>${fmtD(x.data)} · recebido${x.forma ? ' via ' + h(x.forma) : ''}${x.obs ? ` <small>${h(x.obs)}</small>` : ''}</span><b class="ok">+${moeda(x.valor)}</b>${admin() ? `<button class="fin-x adm" data-delpag="${x.id}" aria-label="Apagar pagamento" title="Apagar">×</button>` : ''}</div>`
+      : `<div class="fin-it"><span>${fmtD(x.data)} · reajuste${x.motivo ? ` <small>${h(x.motivo)}</small>` : ''}</span><b>${moeda(x.de)} → ${moeda(x.para)}</b></div>`).join('')}</details>` : ''}
+    <div class="fin-bts adm">${c.tem && c.restante > 0 ? `<button class="btn ok sm" id="fin-pag">＋ Registrar pagamento</button>` : ''}${c.tem ? `<button class="btn sm" id="fin-rea">↕ Reajustar valor</button>` : ''}<button class="btn sm ${c.tem ? '' : 'pri'}" id="fin-ed">${c.tem ? '✎ Editar' : '＋ Informar orçamento'}</button></div>
+  </div>`;
+}
+async function salvarFin(p, f, msg) {
+  const servico = f.reajustes.length ? +f.reajustes.at(-1).para : (f.orcamento != null && f.orcamento !== '' ? +f.orcamento : null);
+  const ok = await acao(() => DB.upd(T.processos, p.id, { financeiro: f, honorarios: servico, atualizado_em: new Date().toISOString() }), msg);
+  if (ok) abrirDetalhe(p.id);
+}
+const numBR = v => { const t = String(v ?? '').trim().replace(/\s|R\$/g, ''); if (!t) return null; const n = +(t.includes(',') ? t.replace(/\./g, '').replace(',', '.') : t); return isFinite(n) ? r2(n) : NaN; };
+const campoValor = (id, v, extra = '') => `<input id="${id}" inputmode="decimal" placeholder="0,00" value="${v != null && v !== '' ? String(r2(v)).replace('.', ',') : ''}" ${extra}>`;
+function formPagamento(p) {
+  const c = calcFin(p), sug = c.atrasado > 0 ? c.atrasado : c.proximo ? c.proximo.valor : c.restante;
+  modal(`<div class="cab"><h3>＋ Pagamento — ${h(p.cliente)}</h3><button class="btn ghost" data-fechar aria-label="Fechar">✕</button></div>
+  <div class="corpo"><div class="fin-resumo"><span>Valor <b>${moedaReal(c.valor)}</b></span><span>Pago <b>${moedaReal(c.pago)}</b></span><span>Falta <b>${moedaReal(c.restante)}</b></span></div>
+  <div class="form">
+    <div class="campo c2"><label>Valor recebido (R$)</label>${campoValor('pg-v', sug)}<button type="button" class="link-btn" id="pg-tudo">Quitar tudo (${moedaReal(c.restante)})</button></div>
+    <div class="campo c2"><label>Data</label><input type="date" id="pg-d" value="${hoje()}"></div>
+    <div class="campo c2"><label>Forma</label><select id="pg-f"><option value="">—</option>${FIN_FORMAS.map(x => `<option ${x === c.f.forma ? 'selected' : ''}>${x}</option>`).join('')}</select></div>
+    <div class="campo c6"><label>Observação (opcional)</label><input id="pg-o" placeholder="Ex.: entrada de 50%"></div>
+  </div><div class="fin-calc" id="pg-calc"></div></div>
+  <div class="rod"><button class="btn" data-fechar>Cancelar</button><button class="btn ok" id="pg-ok">Registrar pagamento</button></div>`, '', 2);
+  const calc = () => { const v = numBR($('#pg-v').value); $('#pg-calc').innerHTML = v > 0 ? (v - c.restante > 0.004 ? `<span class="falta">⚠ Valor maior que o que falta (${moedaReal(c.restante)}).</span>` : `Depois deste pagamento falta <b>${moedaReal(Math.max(0, c.restante - v))}</b>${c.restante - v <= 0.004 ? ' — <b class="ok">quitado ✔</b>' : ''}.`) : ''; };
+  $('#pg-v').oninput = calc; calc();
+  $('#pg-tudo').onclick = () => { $('#pg-v').value = String(c.restante).replace('.', ','); calc(); };
+  $('#pg-ok').onclick = async () => {
+    const v = numBR($('#pg-v').value); if (!(v > 0)) { $('#pg-v').focus(); return toast('Informe o valor recebido', 'erro'); }
+    if (v - c.restante > 0.004 && !(await confirmar(`O valor é maior do que falta receber (${moedaReal(c.restante)}). Registrar mesmo assim?`))) return;
+    const f = finDe(p); f.pagamentos = [...f.pagamentos, { id: uid(), data: $('#pg-d').value || hoje(), valor: v, forma: $('#pg-f').value || null, obs: $('#pg-o').value.trim() || null }];
+    let resta = v; f.previsoes = [...f.previsoes].sort((a, b) => (a.data || '').localeCompare(b.data || '')).map(x => { const usa = Math.min(r2(x.valor), resta); resta = r2(resta - usa); return { ...x, valor: r2(x.valor - usa) }; }).filter(x => x.valor > 0.004);
+    fecharModal(2); salvarFin(p, f, 'Pagamento registrado');
+  };
+}
+function formReajuste(p) {
+  const c = calcFin(p);
+  modal(`<div class="cab"><h3>↕ Reajustar valor — ${h(p.cliente)}</h3><button class="btn ghost" data-fechar aria-label="Fechar">✕</button></div>
+  <div class="corpo"><div class="fin-resumo"><span>Valor atual do serviço <b>${moedaReal(c.servico)}</b></span><span>Já pago <b>${moedaReal(c.pago)}</b></span></div>
+  <div class="form">
+    <div class="campo c2"><label>Novo valor do serviço (R$)</label>${campoValor('rj-v', c.servico)}</div>
+    <div class="campo c2"><label>Data do reajuste</label><input type="date" id="rj-d" value="${hoje()}"></div>
+    <div class="campo c2"><label>Diferença</label><input id="rj-dif" readonly tabindex="-1"></div>
+    <div class="campo c6"><label>Motivo</label><input id="rj-m" placeholder="Ex.: inclusão de mais uma atividade"></div>
+    ${c.f.previsoes.length ? `<div class="campo c6"><label class="chk"><input type="checkbox" id="rj-prev" checked> Ajustar a última previsão de pagamento com a diferença</label></div>` : ''}
+  </div><div class="fin-calc" id="rj-calc"></div></div>
+  <div class="rod"><button class="btn" data-fechar>Cancelar</button><button class="btn pri" id="rj-ok">Salvar reajuste</button></div>`, '', 2);
+  const calc = () => { const v = numBR($('#rj-v').value); if (!(v >= 0)) { $('#rj-dif').value = ''; $('#rj-calc').innerHTML = ''; return; } const d = r2(v - c.servico); $('#rj-dif').value = (d > 0 ? '+' : '') + moedaReal(d); $('#rj-calc').innerHTML = `Novo total a receber: <b>${moedaReal(v + c.taxasReemb)}</b> · falta <b>${moedaReal(Math.max(0, v + c.taxasReemb - c.pago))}</b>`; };
+  $('#rj-v').oninput = calc; calc(); setTimeout(() => $('#rj-v').select(), 50);
+  $('#rj-ok').onclick = () => {
+    const v = numBR($('#rj-v').value); if (!(v >= 0)) { $('#rj-v').focus(); return toast('Informe o novo valor', 'erro'); }
+    const d = r2(v - c.servico); if (Math.abs(d) < 0.005) return toast('O valor é o mesmo de antes', 'erro');
+    const f = finDe(p); f.reajustes = [...f.reajustes, { data: $('#rj-d').value || hoje(), de: c.servico, para: v, motivo: $('#rj-m').value.trim() || null }];
+    const cx = $('#rj-prev'); if (cx && cx.checked && f.previsoes.length) { const ps = [...f.previsoes].sort((a, b) => (a.data || '').localeCompare(b.data || '')); const u = ps.at(-1); u.valor = Math.max(0, r2(+u.valor + d)); f.previsoes = ps.filter(x => x.valor > 0); }
+    fecharModal(2); salvarFin(p, f, 'Valor reajustado');
+  };
+}
+// editor de previsões (usado no detalhe e no cadastro)
+function edPrevisoes(box, lista, totalFn) {
+  const desenha = () => {
+    const falta = totalFn(), prog = r2(lista.reduce((a, x) => a + (+x.valor || 0), 0)), dif = r2(falta - prog);
+    box.innerHTML = `${lista.map((x, i) => `<div class="prev-l"><input type="date" data-pd="${i}" value="${h(x.data || '')}"><input inputmode="decimal" data-pv="${i}" placeholder="0,00" value="${x.valor ? String(x.valor).replace('.', ',') : ''}"><button type="button" class="btn sm ghost" data-px="${i}" aria-label="Tirar previsão">✕</button></div>`).join('') || '<div class="fin-vazio">Nenhuma previsão. Use os botões abaixo.</div>'}
+      <div class="prev-bar"><button type="button" class="btn sm" id="pv-add">＋ Data de pagamento</button><span class="prev-div">Dividir o restante em <select id="pv-n">${[1, 2, 3, 4, 5, 6, 10, 12].map(n => `<option>${n}</option>`).join('')}</select>× mensais a partir de <input type="date" id="pv-ini" value="${h(lista[0]?.data || hoje())}"> <button type="button" class="btn sm" id="pv-div">Dividir</button></span></div>
+      <div class="fin-calc">${falta > 0 ? `Falta receber <b>${moedaReal(falta)}</b> · programado <b>${moedaReal(prog)}</b>${Math.abs(dif) > 0.004 ? ` · <span class="${dif > 0 ? 'falta' : 'falta'}">${dif > 0 ? moedaReal(dif) + ' sem data' : moedaReal(-dif) + ' a mais que o restante'}</span>` : ' · <b class="ok">tudo programado ✔</b>'}` : 'Nada a receber.'}</div>`;
+    $$('[data-pd]', box).forEach(i => i.onchange = () => { lista[+i.dataset.pd].data = i.value; });
+    $$('[data-pv]', box).forEach(i => i.onchange = () => { lista[+i.dataset.pv].valor = numBR(i.value) || 0; desenha(); });
+    $$('[data-px]', box).forEach(b => b.onclick = () => { lista.splice(+b.dataset.px, 1); desenha(); });
+    $('#pv-add', box).onclick = () => { const prog2 = lista.reduce((a, x) => a + (+x.valor || 0), 0); lista.push({ id: uid(), data: '', valor: Math.max(0, r2(totalFn() - prog2)) }); desenha(); $$('[data-pd]', box).at(-1)?.focus(); };
+    $('#pv-div', box).onclick = () => {
+      const n = +$('#pv-n', box).value, ini = $('#pv-ini', box).value || hoje(), tot = totalFn(); if (!(tot > 0)) return toast('Não há valor a receber', 'erro');
+      const parc = Math.floor(tot / n * 100) / 100; lista.length = 0;
+      for (let i = 0; i < n; i++) { const d = parseD(ini); d.setMonth(d.getMonth() + i); lista.push({ id: uid(), data: isoLocal(d), valor: i === n - 1 ? r2(tot - parc * (n - 1)) : parc }); }
+      desenha();
+    };
+  };
+  desenha();
+}
+function formFinanceiro(p) {
+  const c = calcFin(p), f = finDe(p), prev = f.previsoes.map(x => ({ ...x }));
+  const optS = (o, v) => `<option value="">—</option>` + Object.entries(o).map(([k, n]) => `<option value="${k}" ${k === v ? 'selected' : ''}>${n}</option>`).join('');
+  modal(`<div class="cab"><h3>💰 Financeiro — ${h(p.cliente)}</h3><button class="btn ghost" data-fechar aria-label="Fechar">✕</button></div>
+  <div class="corpo"><div class="form">
+    <div class="campo c2"><label>Valor do orçamento (R$)</label>${campoValor('fn-orc', c.reajustado ? c.original : c.servico, c.f.reajustes.length ? 'readonly title="Para mudar, use Reajustar valor"' : '')}${c.f.reajustes.length ? `<span class="ajuda">Reajustado para ${moedaReal(c.servico)}. Use “Reajustar valor”.</span>` : ''}</div>
+    <div class="campo c2"><label>Data do orçamento</label><input type="date" id="fn-od" value="${h(f.orcamento_data || p.data_inicio || '')}"></div>
+    <div class="campo c2"><label>Condição de pagamento</label><select id="fn-cond">${optS(FIN_COND, f.condicao)}</select></div>
+    <div class="campo c2"><label>Taxas e emolumentos</label><select id="fn-tax">${optS(FIN_TAXAS, f.taxas)}</select></div>
+    <div class="campo c2"><label id="fn-taxl">Valor das taxas (R$)</label>${campoValor('fn-taxv', f.taxas_valor)}<span class="ajuda" id="fn-taxa"></span></div>
+    <div class="campo c2"><label>Forma de pagamento</label><select id="fn-forma"><option value="">—</option>${FIN_FORMAS.map(x => `<option ${x === f.forma ? 'selected' : ''}>${x}</option>`).join('')}</select></div>
+    <div class="campo c2"><label>Nota fiscal</label><select id="fn-nf">${optS(FIN_NF, f.nf)}</select></div>
+    <div class="campo c2"><label>Nº da nota</label><input id="fn-nfn" value="${h(f.nf_numero || '')}"></div>
+    <div class="campo c2"></div>
+    <div class="campo c6"><label>Previsão de pagamento do restante</label><div id="fn-prev" class="prev-box"></div></div>
+    <div class="campo c6"><label>Observações financeiras</label><textarea id="fn-obs" placeholder="Ex.: cliente pediu para pagar o restante após o registro na JUCERJA">${h(f.obs || '')}</textarea></div>
+  </div></div>
+  <div class="rod"><button class="btn" data-fechar>Cancelar</button><button class="btn pri" id="fn-ok">Salvar financeiro</button></div>`, 'lg', 2);
+  const total = () => { const o = c.f.reajustes.length ? c.servico : (numBR($('#fn-orc').value) || 0); const t = $('#fn-tax').value === 'reembolso' ? (numBR($('#fn-taxv').value) || 0) : 0; return Math.max(0, r2(o + t - c.pago)); };
+  const taxaInfo = () => { const t = $('#fn-tax').value; $('#fn-taxa').textContent = ({ cliente: 'Estimativa — o cliente paga direto as guias.', inclusas: 'Já estão dentro do valor do orçamento.', reembolso: 'Somado ao total a receber do cliente.', isento: '' })[t] || ''; $('#fn-taxl').textContent = t === 'cliente' ? 'Taxas estimadas (R$)' : 'Valor das taxas (R$)'; ed(); };
+  const ed = () => edPrevisoes($('#fn-prev'), prev, total);
+  ['fn-orc', 'fn-taxv'].forEach(id => $('#' + id).addEventListener('change', ed)); $('#fn-tax').onchange = taxaInfo; taxaInfo();
+  $('#fn-ok').onclick = () => {
+    const orc = numBR($('#fn-orc').value), tv = numBR($('#fn-taxv').value);
+    if (Number.isNaN(orc) || Number.isNaN(tv)) return toast('Confira os valores digitados', 'erro');
+    const g = finDe(p);
+    Object.assign(g, { orcamento: c.f.reajustes.length ? g.orcamento ?? c.original : orc, orcamento_data: $('#fn-od').value || null, condicao: $('#fn-cond').value || null, taxas: $('#fn-tax').value || null, taxas_valor: tv,
+      forma: $('#fn-forma').value || null, nf: $('#fn-nf').value || null, nf_numero: $('#fn-nfn').value.trim() || null, obs: $('#fn-obs').value.trim() || null,
+      previsoes: prev.filter(x => x.data && +x.valor > 0).map(x => ({ id: x.id || uid(), data: x.data, valor: r2(x.valor) })) });
+    fecharModal(2); salvarFin(p, g, 'Financeiro salvo');
+  };
+}
+function ligarFin(p, m) {
+  ligarOlho(m);
+  if (!admin()) return;
+  const a = $('#fin-pag', m); if (a) a.onclick = () => formPagamento(p);
+  const b = $('#fin-rea', m); if (b) b.onclick = () => formReajuste(p);
+  const e = $('#fin-ed', m); if (e) e.onclick = () => formFinanceiro(p);
+  $$('[data-delpag]', m).forEach(x => x.onclick = async () => {
+    const f = finDe(p), pg = f.pagamentos.find(y => y.id === x.dataset.delpag);
+    if (!(await confirmar(`Apagar o pagamento de ${moedaReal(pg.valor)} de ${fmtD(pg.data)}?`))) return;
+    f.pagamentos = f.pagamentos.filter(y => y.id !== pg.id); salvarFin(p, f, 'Pagamento apagado');
+  });
+}
+const finTotais = lista => lista.reduce((t, p) => { const c = calcFin(p); if (!c.tem) return t; t.valor += c.valor; t.pago += c.pago; t.falta += c.restante; t.atraso += c.atrasado; if (c.atrasado > 0) t.nAtraso++; if (c.restante > 0) t.nAberto++; return t; }, { valor: 0, pago: 0, falta: 0, atraso: 0, nAtraso: 0, nAberto: 0 });
+const finAtivos = () => S.processos.filter(p => !['desistencia'].includes(p.situacao));
+
 // ---------------------------------------------------------------- DETALHE
 function abrirDetalhe(id, mostrarTudo = false) {
   const p = S.processos.find(x => x.id === id); if (!p) return;
@@ -468,10 +650,10 @@ function abrirDetalhe(id, mostrarTudo = false) {
           <dt>Início</dt><dd>${fmtD(p.data_inicio)}</dd>
           <dt>Previsão</dt><dd>${fmtD(p.previsao)}</dd>
           ${p.data_conclusao ? `<dt>Conclusão</dt><dd>${fmtD(p.data_conclusao)}</dd>` : ''}
-          <dt>Honorários</dt><dd>${p.honorarios != null && p.honorarios !== '' ? moeda(p.honorarios) : '—'}</dd>
           <dt>Gratificação</dt><dd>${p.gratificacao != null && p.gratificacao !== '' ? moeda(p.gratificacao) : '—'}</dd>
           <dt>Parado há</dt><dd>${diasParado(p)} dia(s)</dd>
         </dl>${p.observacoes ? `<div style="margin-top:10px;font-size:13px;white-space:pre-wrap;background:var(--bg);padding:8px 10px;border-radius:8px">${h(p.observacoes)}</div>` : ''}</div>
+        ${blocoFin(p)}
       </div>
     </div>
   </div>
@@ -485,6 +667,7 @@ function abrirDetalhe(id, mostrarTudo = false) {
   </div>`, 'lg');
   const m = $('#modal-root');
   const bt = $('#b-tudo', m); if (bt) bt.onclick = () => abrirDetalhe(id, true);
+  ligarFin(p, m);
   if (!admin()) return;
   ligarFrases('n-txt');
   const br = $('#b-reg', m); if (br) br.onclick = async () => { const t = $('#n-txt').value.trim(); if (!t) return $('#n-txt').focus(); if (await acao(() => registrar(id, t, { data: $('#n-data').value || hoje() }), 'Registrado')) abrirDetalhe(id); };
@@ -545,7 +728,7 @@ function formDesistencia(p) {
 }
 function formFinalizar(p) {
   modal(`<div class="cab"><h3>✔ Finalizar — ${h(p.cliente)}</h3><button class="btn ghost" data-fechar aria-label="Fechar">✕</button></div>
-  <div class="corpo"><div class="form">
+  <div class="corpo">${(() => { const c = calcFin(p); return c.tem && c.restante > 0 ? `<div class="aviso amarelo">💰 Ainda falta receber <b>${moedaReal(c.restante)}</b> deste cliente${c.proximo ? ` (próximo previsto para ${fmtD(c.proximo.data)})` : ''}. O financeiro continua aberto depois de finalizar.</div>` : ''; })()}<div class="form">
     <div class="campo c2"><label>Data de conclusão</label><input type="date" id="fd" value="${hoje()}"></div>
     <div class="campo c2"><label>Gratificação (R$)</label><input type="number" step="0.01" id="fg" value="${p.gratificacao ?? ''}"></div>
     <div class="campo c2"><label>Marcar etapas restantes</label><select id="fe"><option value="concluida">como concluídas</option><option value="dispensada">como dispensadas</option><option value="">não mexer</option></select></div>
@@ -671,9 +854,17 @@ async function formProcesso(p = null, opts = {}) {
       <div class="campo c2"><label>Data de início</label><input type="date" id="f-ini" value="${h(p.data_inicio || '')}"></div>
       <div class="campo c2"><label>Previsão de conclusão</label><input type="date" id="f-prev" value="${h(p.previsao || '')}"></div>
       <div class="campo c2"><label>Data de conclusão</label><input type="date" id="f-conc" value="${h(p.data_conclusao || '')}"></div>
-      <div class="campo c2"><label>Honorários (R$)</label><input type="number" step="0.01" id="f-hon" value="${h(p.honorarios ?? '')}"></div>
       <div class="campo c2"><label>Gratificação (R$)</label><input type="number" step="0.01" id="f-grat" value="${h(p.gratificacao ?? '')}"></div>
-      <div class="campo c2"></div>
+    </div>
+    <div class="secao"><h3>💰 Financeiro</h3><span class="dica">${novo ? 'Pode preencher depois. Pagamentos, reajustes e datas do restante também ficam no detalhe do processo.' : 'Pagamentos, reajustes e datas do restante ficam no detalhe do processo → Financeiro.'}</span></div>
+    <div class="form">
+      <div class="campo c2"><label>Valor do orçamento (R$)</label>${campoValor('f-orc', calcFin(p).servico)}${!novo && calcFin(p).tem ? '<span class="ajuda">Se mudar, fica registrado como reajuste.</span>' : ''}</div>
+      <div class="campo c2"><label>Taxas e emolumentos</label><select id="f-tax"><option value="">—</option>${Object.entries(FIN_TAXAS).map(([k, n]) => `<option value="${k}" ${k === finDe(p).taxas ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
+      <div class="campo c2"><label>Valor das taxas (R$)</label>${campoValor('f-taxv', finDe(p).taxas_valor)}</div>
+      ${novo ? `<div class="campo c2"><label>Já recebido / entrada (R$)</label>${campoValor('f-entr', '')}</div>
+      <div class="campo c2"><label>Previsão de pagamento do restante</label><input type="date" id="f-prevpag"></div>
+      <div class="campo c2"><label>Forma de pagamento</label><select id="f-forma"><option value="">—</option>${FIN_FORMAS.map(x => `<option>${x}</option>`).join('')}</select></div>
+      <div class="campo c6 fin-calc" id="f-fincalc"></div>` : ''}
       ${novo ? `<div class="campo c6"><label>Status atual (vai para o diário de hoje)</label><input id="f-st0" list="dl-frases3" placeholder="Ex.: Orçamento enviado" value="${h(opts.status || '')}">${frasesHTML('f-st0')}</div>` : ''}
       <div class="campo c6"><label>Observações</label><textarea id="f-obs">${h(p.observacoes || '')}</textarea></div>
     </div>
@@ -683,6 +874,7 @@ async function formProcesso(p = null, opts = {}) {
   </div>
   <div class="rod"><button class="btn" data-fechar>Cancelar</button><button class="btn pri" id="b-salvar">${novo ? 'Colocar na esteira' : 'Salvar alterações'}</button></div>`, 'lg');
 
+  const fcalc = $('#f-fincalc'); if (fcalc) { const up = () => { const o = numBR($('#f-orc').value) || 0, t = $('#f-tax').value === 'reembolso' ? (numBR($('#f-taxv').value) || 0) : 0, e = numBR($('#f-entr').value) || 0, tot = r2(o + t); fcalc.innerHTML = tot > 0 ? `Total a receber <b>${moedaReal(tot)}</b>${t ? ' (com taxas a reembolsar)' : ''} · entrada <b>${moedaReal(e)}</b> · falta <b class="${tot - e > 0 ? 'falta' : 'ok'}">${moedaReal(Math.max(0, tot - e))}</b>${tot - e > 0 && !$('#f-prevpag').value ? ' · <span class="falta">informe a data prevista do restante</span>' : ''}` : ''; }; ['f-orc', 'f-taxv', 'f-entr', 'f-prevpag', 'f-tax'].forEach(i => $('#' + i).addEventListener('input', up)); $('#f-tax').addEventListener('change', up); up(); }
   const todasEtapasCardapio = [...new Map(S.presets.flatMap(x => (x.etapas || []).map(e => [e.nome, e]))).values()].sort((a, b) => a.nome.localeCompare(b.nome));
   const desenha = () => {
     $('#ed-etapas').innerHTML = (etapas.length ? etapas.map((e, i) => `
@@ -746,9 +938,26 @@ async function formProcesso(p = null, opts = {}) {
       preset_id: presetFinal, situacao: $('#f-sit').value, aguardando: $('#f-ag').value, prioridade: $('#f-pri').value,
       responsavel: $('#f-resp').value.trim() || null, contato: $('#f-cont').value.trim() || null, modo_diario: $('#f-modo').value,
       data_inicio: $('#f-ini').value || hoje(), previsao: $('#f-prev').value || null, data_conclusao: $('#f-conc').value || null,
-      honorarios: num($('#f-hon').value), gratificacao: num($('#f-grat').value), observacoes: $('#f-obs').value.trim() || null, atualizado_em: new Date().toISOString(),
+      gratificacao: num($('#f-grat').value), observacoes: $('#f-obs').value.trim() || null, atualizado_em: new Date().toISOString(),
     };
     if (['finalizado', 'desistencia'].includes(dados.situacao) && !dados.data_conclusao) dados.data_conclusao = hoje();
+    { // financeiro
+      const orc = numBR($('#f-orc').value), tv = numBR($('#f-taxv').value);
+      if (Number.isNaN(orc) || Number.isNaN(tv)) return toast('Confira os valores do financeiro', 'erro');
+      const f = finDe(p), c0 = calcFin(p);
+      if (c0.tem && orc != null && Math.abs(orc - c0.servico) > 0.004) f.reajustes = [...f.reajustes, { data: hoje(), de: c0.servico, para: orc, motivo: 'Alterado ao editar o processo' }];
+      else if (!c0.tem) { f.orcamento = orc; if (orc != null) f.orcamento_data = f.orcamento_data || hoje(); }
+      f.taxas = $('#f-tax').value || null; f.taxas_valor = tv;
+      if (novo) {
+        const en = numBR($('#f-entr').value), dp = $('#f-prevpag').value, fo = $('#f-forma').value || null;
+        if (Number.isNaN(en)) return toast('Confira o valor da entrada', 'erro');
+        if (fo) f.forma = fo;
+        if (en > 0) { f.pagamentos = [{ id: uid(), data: hoje(), valor: en, forma: fo, obs: 'Entrada' }]; f.condicao = f.condicao || 'entrada'; }
+        const tot = (orc || 0) + (f.taxas === 'reembolso' ? (tv || 0) : 0), resto = r2(tot - (en > 0 ? en : 0));
+        if (dp && resto > 0) f.previsoes = [{ id: uid(), data: dp, valor: resto }];
+      }
+      dados.financeiro = f; dados.honorarios = f.reajustes.length ? +f.reajustes.at(-1).para : (f.orcamento ?? null);
+    }
     const id = novo ? uid() : p.id;
     const ok = await acao(async () => {
       if (novo) await DB.ins(T.processos, { id, ...dados, criado_em: new Date().toISOString() });
@@ -841,7 +1050,10 @@ function formPreset(x = null, aoSalvar = null) {
 }
 
 // ---------------------------------------------------------------- RELATÓRIO MENSAL
+function abasRel() { return `<div class="tabs"><button class="tab ${S.relAba !== 'financeiro' ? 'on' : ''}" data-rela="mes">✔ Finalizados do mês</button><button class="tab ${S.relAba === 'financeiro' ? 'on' : ''}" data-rela="financeiro">💰 Financeiro</button></div>`; }
+function ligarAbasRel(el) { $$('[data-rela]', el).forEach(b => b.onclick = () => { S.relAba = b.dataset.rela; render(); }); }
 function vRelatorio(el) {
+  if (S.relAba === 'financeiro') return vRelFin(el);
   const meses = [...new Set([hoje().slice(0, 7), ...S.processos.filter(p => p.data_conclusao).map(p => p.data_conclusao.slice(0, 7))])].sort().reverse();
   const fin = S.processos.filter(p => p.situacao !== 'desistencia' && ['finalizado', 'arquivado'].includes(p.situacao) && (p.data_conclusao || '').startsWith(S.mesRel)).sort((a, b) => a.data_conclusao.localeCompare(b.data_conclusao));
   const des = S.processos.filter(p => p.situacao === 'desistencia' && (p.data_conclusao || '').startsWith(S.mesRel));
@@ -851,6 +1063,7 @@ function vRelatorio(el) {
   <div class="topo"><h2>Trabalhos finalizados</h2>
     <select id="mes" class="btn">${meses.map(m => `<option value="${m}" ${m === S.mesRel ? 'selected' : ''}>${nomeMes(m)}</option>`).join('')}</select>
     <button class="btn" data-olho title="Esconder ou mostrar os valores">${valoresOcultos() ? '🙈 Mostrar valores' : '👁 Esconder valores'}</button><button class="btn" id="b-csv">⤓ Exportar CSV</button><button class="btn" onclick="window.print()">🖨 Imprimir</button></div>
+  ${abasRel()}
   <div class="card" style="overflow:auto">
     <div style="padding:14px 16px;font-weight:700;text-transform:uppercase">Trabalhos finalizados em ${nomeMes(S.mesRel)}</div>
     <table class="tb"><thead><tr><th>#</th><th>Nome</th><th>Tipo de cliente</th><th>Serviço executado</th><th>Concluído</th><th class="num">Gratificação</th></tr></thead>
@@ -859,11 +1072,48 @@ function vRelatorio(el) {
   </div>
   ${des.length ? `<div class="secao"><h3>Desistências no mês</h3></div><div class="card"><table class="tb"><tbody>${des.map(p => `<tr data-proc="${p.id}" style="cursor:pointer"><td>${h(p.cliente)}</td><td>${h(p.servico)}</td><td>${h(p.desistencia_motivo || '')}</td><td>${fmtD(p.data_conclusao)}</td></tr>`).join('')}</tbody></table></div>` : ''}`;
   $('#mes', el).onchange = e => { S.mesRel = e.target.value; render(); };
+  ligarAbasRel(el);
   ligarOlho(el);
   $$('[data-proc]', el).forEach(r => r.onclick = () => abrirDetalhe(r.dataset.proc));
   $('#b-csv', el).onclick = () => {
     const linhas = [['Nome', 'Tipo de cliente', 'Serviço executado', 'Conclusão', 'Gratificação'], ...fin.map(p => [p.cliente, p.tipo_cliente, p.servico || '', fmtD(p.data_conclusao), (p.gratificacao ?? '').toString().replace('.', ',')]), ['TOTAL', '', '', '', tot.toFixed(2).replace('.', ',')]];
     baixar(`finalizados-${S.mesRel}.csv`, '﻿' + linhas.map(l => l.map(c => `"${String(c).replace(/"/g, '""')}"`).join(';')).join('\n'), 'text/csv');
+  };
+}
+function vRelFin(el) {
+  const FILT = { aberto: 'Em aberto', atrasado: 'Atrasados', quitado: 'Quitados', sem: 'Sem orçamento', todos: 'Todos' };
+  const f0 = S.finFiltro || 'aberto';
+  const base = finAtivos(), t = finTotais(base);
+  const mes = hoje().slice(0, 7);
+  const recMes = r2(base.reduce((a, p) => a + finDe(p).pagamentos.filter(x => (x.data || '').startsWith(mes)).reduce((b, x) => b + (+x.valor || 0), 0), 0));
+  const prev30 = (() => { const lim = new Date(); lim.setDate(lim.getDate() + 30); const L = isoLocal(lim); return r2(base.reduce((a, p) => { const c = calcFin(p); return a + (c.proximo && c.proximo.data && c.proximo.data <= L ? c.proximo.valor : 0); }, 0)); })();
+  const linhas = base.map(p => ({ p, c: calcFin(p) })).filter(({ c }) => f0 === 'todos' || (f0 === 'aberto' ? c.tem && c.restante > 0 : c.status === f0))
+    .sort((a, b) => b.c.atrasado - a.c.atrasado || (a.c.proximo?.data || '9').localeCompare(b.c.proximo?.data || '9') || b.c.restante - a.c.restante);
+  const cnt = k => base.filter(p => { const c = calcFin(p); return k === 'todos' || (k === 'aberto' ? c.tem && c.restante > 0 : c.status === k); }).length;
+  el.innerHTML = `
+  <div class="topo"><h2>Financeiro</h2>
+    <button class="btn" data-olho>${valoresOcultos() ? '🙈 Mostrar valores' : '👁 Esconder valores'}</button><button class="btn" id="b-csvf">⤓ Exportar CSV</button><button class="btn" onclick="window.print()">🖨 Imprimir</button></div>
+  ${abasRel()}
+  <div class="kpis">
+    <div class="card kpi"><div class="v fin-k">${moeda(t.valor)}</div><div class="l">Total orçado (processos ativos e finalizados)</div></div>
+    <div class="card kpi bom"><div class="v fin-k">${moeda(t.pago)}</div><div class="l">Já recebido</div></div>
+    <div class="card kpi atenc"><div class="v fin-k">${moeda(t.falta)}</div><div class="l">Falta receber · ${t.nAberto} ${t.nAberto === 1 ? 'processo' : 'processos'}</div></div>
+    <div class="card kpi ${t.atraso > 0 ? 'alerta' : 'bom'}"><div class="v fin-k">${moeda(t.atraso)}</div><div class="l">Em atraso · ${t.nAtraso} ${t.nAtraso === 1 ? 'cliente' : 'clientes'}</div></div>
+    <div class="card kpi"><div class="v fin-k">${moeda(recMes)}</div><div class="l">Recebido neste mês · previsto p/ 30 dias: ${moeda(prev30)}</div></div>
+  </div>
+  <div class="tabs">${Object.entries(FILT).map(([k, n]) => `<button class="tab ${f0 === k ? 'on' : ''}" data-ff="${k}">${n}<span class="n">${cnt(k)}</span></button>`).join('')}</div>
+  <div class="card" style="overflow:auto"><table class="tb tb-fin"><thead><tr><th>Cliente</th><th>Serviço</th><th>Situação</th><th>Taxas</th><th class="num">Valor</th><th class="num">Pago</th><th class="num">Falta</th><th>Próximo pagamento</th></tr></thead>
+  <tbody>${linhas.map(({ p, c }) => `<tr data-proc="${p.id}" style="cursor:pointer"><td><b>${h(p.cliente)}</b><div class="tb-m">${chipFin(p) || '<span class="chip">sem orçamento</span>'}</div></td><td>${h(p.servico || '')}</td><td>${h(SITUACOES[p.situacao]?.nome.replace(/s$/, '') || '')}</td><td>${h(FIN_TAXAS[c.f.taxas] || '—')}</td>
+    <td class="num">${c.tem ? moeda(c.valor) + (c.reajustado ? ' <small title="Valor reajustado">↕</small>' : '') : '—'}</td><td class="num">${c.tem ? moeda(c.pago) : '—'}</td><td class="num ${c.restante > 0 ? 'falta' : ''}">${c.tem ? moeda(c.restante) : '—'}</td>
+    <td>${c.atrasado > 0 ? `<span class="falta">⚠ ${moeda(c.atrasado)} vencido</span>` : c.proximo ? `${fmtD(c.proximo.data)} · ${moeda(c.proximo.valor)}` : c.semData > 0 ? '<span class="falta">sem data</span>' : c.status === 'quitado' ? '✔' : '—'}</td></tr>`).join('') || '<tr><td colspan="8" class="vazio">Nada aqui.</td></tr>'}</tbody></table></div>`;
+  ligarAbasRel(el); ligarOlho(el);
+  $$('[data-ff]', el).forEach(b => b.onclick = () => { S.finFiltro = b.dataset.ff; render(); });
+  $$('[data-proc]', el).forEach(r => r.onclick = () => abrirDetalhe(r.dataset.proc)); acessivel(el);
+  $('#b-csvf', el).onclick = () => {
+    const br = v => v == null ? '' : r2(v).toFixed(2).replace('.', ',');
+    const L = [['Cliente', 'Serviço', 'Situação', 'Status financeiro', 'Taxas', 'Valor orçado original', 'Valor atual', 'Pago', 'Falta', 'Em atraso', 'Próximo pagamento', 'Valor próximo'],
+      ...linhas.map(({ p, c }) => [p.cliente, p.servico || '', SITUACOES[p.situacao]?.nome || '', FIN_ST[c.status][0], FIN_TAXAS[c.f.taxas] || '', br(c.original), br(c.valor), br(c.pago), br(c.restante), br(c.atrasado), c.proximo ? fmtD(c.proximo.data) : '', c.proximo ? br(c.proximo.valor) : ''])];
+    baixar(`financeiro-${hoje()}.csv`, '﻿' + L.map(l => l.map(x => `"${String(x).replace(/"/g, '""')}"`).join(';')).join('\n'), 'text/csv');
   };
 }
 function baixar(nome, conteudo, tipo) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([conteudo], { type: tipo })); a.download = nome; a.click(); }
@@ -1064,7 +1314,9 @@ function montarEmail(lista, titulo, { recado = '', link = '' } = {}) {
     t.push(it.hoje ? `  Hoje: ${it.hoje}` : `  Último status${it.ult ? ' (' + fmtD(it.ult.data).slice(0, 5) + ')' : ''}: ${it.st.txt}`);
     const extra = [situ(it), it.p.situacao === 'andamento' && it.parado >= S.config.alerta_dias ? `${it.parado} dias sem movimento` : ''].filter(Boolean).join(' · ');
     if (extra) t.push(`  ${extra}`);
+    const fc = calcFin(it.p); if (fc.tem) t.push(`  Financeiro: ${FIN_ST[fc.status][0]} · pago ${moedaReal(fc.pago)} de ${moedaReal(fc.valor)}${fc.restante > 0 ? ` · falta ${moedaReal(fc.restante)}` : ''}${fc.atrasado > 0 ? ` (${moedaReal(fc.atrasado)} vencido)` : fc.proximo ? ` · próximo ${fmtD(fc.proximo.data).slice(0, 5)}` : ''}${fc.f.taxas ? ` · taxas: ${FIN_TAXAS[fc.f.taxas].toLowerCase()}` : ''}`);
   });
+  { const ft = finTotais(lista); if (ft.valor) t.splice(recado ? 5 : 3, 0, `▸ Financeiro destes processos: ${moedaReal(ft.pago)} recebidos de ${moedaReal(ft.valor)} · falta ${moedaReal(ft.falta)}${ft.atraso ? ` · ${moedaReal(ft.atraso)} em atraso` : ''}`); }
   if (link) t.push('', `Andamento completo, atualizado em tempo real: ${link}`);
   t.push('', 'Qualquer dúvida, estou à disposição.', 'Mateus · Departamento de Legalização · JOPEC');
   const texto = t.join('\n');
@@ -1082,6 +1334,7 @@ function montarEmail(lista, titulo, { recado = '', link = '' } = {}) {
       <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:5px"><tr><td style="background:#efe9e9;border-radius:6px;height:7px;line-height:7px;font-size:0"><table width="${Math.max(it.pr.pct, 3)}%" cellpadding="0" cellspacing="0"><tr><td style="background:#1a7f37;border-radius:6px;height:7px;line-height:7px;font-size:0">&nbsp;</td></tr></table></td><td width="38" style="font:700 11px Arial,sans-serif;color:${SB};text-align:right">${it.pr.pct}%</td></tr></table>` : ''}
       <div style="font:13px/1.45 Arial,sans-serif;color:${TX};background:#f7f4f4;border-radius:8px;padding:8px 10px;margin-top:10px">${it.hoje ? `<b style="color:#1a7f37">Hoje:</b> ${h(it.hoje)}` : `<b>Último status${it.ult ? ' (' + fmtD(it.ult.data).slice(0, 5) + ')' : ''}:</b> ${h(it.st.txt)}`}</div>
       <div style="margin-top:6px">${it.p.aguardando === 'chefes' && it.p.situacao === 'andamento' ? tag('⚑ Depende de vocês', '#fff4d4', '#8a5a00') : tag(situ(it) || '—', '#f2eded', SB)}${alerta ? tag(`${it.parado} dias sem movimento`, '#fbdcd8', '#b3261e') : ''}</div>
+      ${(() => { const fc = calcFin(it.p); if (!fc.tem) return ''; const cor = { quitado: '#1a7f37', atrasado: '#b3261e', parcial: '#8a5a00' }[fc.status] || SB; return `<div style="font:12.5px/1.5 Arial,sans-serif;color:${TX};border-top:1px dashed ${BD};margin-top:10px;padding-top:8px">💰 <b style="color:${cor}">${FIN_ST[fc.status][0]}</b> · pago <b>${moedaReal(fc.pago)}</b> de ${moedaReal(fc.valor)}${fc.restante > 0 ? ` · falta <b>${moedaReal(fc.restante)}</b>` : ''}${fc.atrasado > 0 ? ` · <b style="color:#b3261e">${moedaReal(fc.atrasado)} vencido</b>` : fc.proximo ? ` · próximo em ${fmtD(fc.proximo.data)}` : ''}${fc.f.taxas ? `<br><span style="color:${SB}">Taxas: ${h(FIN_TAXAS[fc.f.taxas])}${fc.f.taxas_valor ? ' (' + moedaReal(fc.f.taxas_valor) + ')' : ''}</span>` : ''}</div>`; })()}
     </td></tr></table></td></tr>`;
   };
   const html = `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f3f0f0">
@@ -1094,6 +1347,7 @@ function montarEmail(lista, titulo, { recado = '', link = '' } = {}) {
       <div style="font:15px/1.5 Arial,sans-serif;color:${TX}">${saud}! Segue o resumo da Legalização de <b>${h(dataBR)}</b>.</div>
       ${recado ? `<div style="font:14px/1.5 Arial,sans-serif;color:${TX};background:#fff4d4;border-radius:8px;padding:10px 12px;margin-top:10px">${h(recado).replace(/\n/g, '<br>')}</div>` : ''}
       <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:12px"><tr>${kpi(k.and, 'Em andamento', TX)}${kpi(k.hoje, 'Novidade hoje', '#1a7f37')}${kpi(k.chefes, 'Dependem de vocês', '#8a5a00')}${kpi(k.parados, `Parados ${S.config.alerta_dias}+ dias`, '#b3261e')}</tr></table>
+      ${(() => { const ft = finTotais(lista); return ft.valor ? `<div style="font:13px/1.5 Arial,sans-serif;color:${TX};background:#fff;border:1px solid ${BD};border-radius:10px;padding:10px 12px;margin-top:8px">💰 <b>Financeiro:</b> ${moedaReal(ft.pago)} recebidos de ${moedaReal(ft.valor)} · falta <b>${moedaReal(ft.falta)}</b>${ft.atraso ? ` · <b style="color:#b3261e">${moedaReal(ft.atraso)} em atraso</b>` : ''}</div>` : ''; })()}
       <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:8px">${itens.map(card).join('')}</table>
       ${link ? `<table cellpadding="0" cellspacing="0" style="margin:14px auto 6px"><tr><td style="background:${V};border-radius:10px"><a href="${h(link)}" style="display:inline-block;padding:12px 22px;font:700 14px Arial,sans-serif;color:#fff;text-decoration:none">Ver andamento completo →</a></td></tr></table>` : ''}
       <div style="font:13px/1.5 Arial,sans-serif;color:${SB};margin:16px 0 8px">Qualquer dúvida, estou à disposição.<br><b style="color:${TX}">Mateus</b> · Departamento de Legalização · JOPEC</div>
@@ -1159,10 +1413,11 @@ async function desenharLinkPublico() {
       <button class="btn pri" id="lk-copiar">Copiar link</button><a class="btn" href="${h(urlPublica(ativo.token))}" target="_blank">Abrir</a></div>
     <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="btn" id="lk-novo">↻ Gerar link novo (o atual para de funcionar)</button><button class="btn dang" id="lk-off">Desativar link</button></div>`
     : `<p style="margin-top:0">Nenhum link público ativo.</p><button class="btn pri" id="lk-novo">Gerar link público</button>`;
+  if (!box.isConnected) return; // a pessoa já saiu da tela de Configurações
   const novoToken = () => [...crypto.getRandomValues(new Uint8Array(18))].map(b => 'abcdefghijkmnpqrstuvwxyz23456789'[b % 32]).join('');
   const salvar = async (fn) => { try { await fn(); desenharLinkPublico(); } catch (e) { avisar('Não foi possível: ' + (e.message || e)); } };
   const bc = $('#lk-copiar'); if (bc) bc.onclick = async () => { try { await navigator.clipboard.writeText($('#lk-url').value); toast('Link copiado'); } catch { $('#lk-url').select(); document.execCommand('copy'); toast('Link copiado'); } };
-  $('#lk-novo').onclick = () => salvar(async () => {
+  const bn = $('#lk-novo', box); if (bn) bn.onclick = () => salvar(async () => {
     const t = novoToken();
     if (MODO_DEMO) { const db = DB.demo(); db.leg_link_publico = [{ token: t, ativo: true }]; DB.salvaDemo(db); return; }
     await sb.from('leg_link_publico').update({ ativo: false }).eq('ativo', true);
@@ -1211,7 +1466,8 @@ async function telaPublica(token) {
         return `<div class="card" style="padding:16px 18px;border-left:4px solid var(--navy)">
           <div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap"><div style="flex:1;min-width:200px"><div class="nome" style="font:700 16px var(--f-display)">${h(p.cliente)}</div><div style="color:var(--sub);font-size:13px">${h(p.servico || '')}</div></div>
             <div style="display:flex;gap:6px;flex-wrap:wrap"><span class="chip">${h(p.tipo_cliente || '')}</span>${p.situacao === 'andamento' ? `<span class="chip">${h(AGUARDANDO[p.aguardando] || '')}</span>` : ''}
-            ${p.situacao === 'finalizado' ? `<span class="chip verde">finalizado ${fmtD(p.data_conclusao)}</span>` : ''}${p.situacao === 'desistencia' ? `<span class="chip vermelho">desistência ${fmtD(p.data_conclusao)}</span>` : ''}
+            ${p.situacao === 'finalizado' ? `<span class="chip verde">finalizado ${fmtD(p.data_conclusao)}</span>` : ''}
+      ${chipFin(p)}${p.situacao === 'desistencia' ? `<span class="chip vermelho">desistência ${fmtD(p.data_conclusao)}</span>` : ''}
             ${p.situacao === 'pausado' ? `<span class="chip amarelo">pausado${p.retomar_em ? ' · retomar ' + fmtD(p.retomar_em) : ''}</span>` : ''}</div></div>
           ${es.length ? `<div class="etapa-atual" style="margin-top:10px"><span>${p.situacao === 'andamento' && at ? `Etapa ${es.indexOf(at) + 1}/${es.length}: <b>${h(at.nome)}</b>` : `${ok}/${es.length} etapas concluídas`}</span><span>${pct}%</span></div><div class="barra" style="margin-top:4px"><div style="width:${pct}%"></div></div>
           <div class="esteira" style="margin-top:8px">${es.map((e, i) => `<div class="passo ${e.status}"><div class="bola">${e.status === 'concluida' ? '✓' : i + 1}</div><div class="nm">${h(e.nome)}</div><div class="dt">${e.status === 'concluida' ? fmtD(e.concluida_em) : e.status === 'andamento' ? 'em andamento' : (e.prazo || '')}</div></div>`).join('')}</div>` : ''}
