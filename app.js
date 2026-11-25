@@ -321,49 +321,102 @@ function ligarCartoes(el) { $$('[data-proc]', el).forEach(c => c.onclick = () =>
 // ---------------------------------------------------------------- PAINEL
 function vPainel(el) {
   const and = S.processos.filter(p => p.situacao === 'andamento');
-  const parados = and.filter(p => diasParado(p) >= S.config.alerta_dias).sort((a, b) => diasParado(b) - diasParado(a));
-  const pausaVencida = S.processos.filter(p => p.situacao === 'pausado' && p.retomar_em && p.retomar_em <= hoje());
+  const pausados = S.processos.filter(p => p.situacao === 'pausado');
+  const pausaVencida = pausados.filter(p => p.retomar_em && p.retomar_em <= hoje());
   const mes = hoje().slice(0, 7);
   const fimMes = S.processos.filter(p => p.situacao === 'finalizado' && (p.data_conclusao || '').startsWith(mes));
-  const semHoje = and.filter(p => !atualDe(p.id).some(a => a.data === hoje()));
+  const movHoje = p => atualDe(p.id).some(a => a.data === hoje() && a.tipo !== 'sistema');
+  const fin = finTotais(finAtivos());
   const d = new Date();
+  const ALERTA = S.config.alerta_dias;
+
+  // ---- o que pede atenção (uma lista só, do mais grave para o mais leve)
+  const atencao = [];
+  and.filter(p => diasParado(p) >= ALERTA).sort((a, b) => diasParado(b) - diasParado(a))
+    .forEach(p => atencao.push({ p, cor: 'vermelho', txt: `${diasParado(p)} dias sem movimento` }));
+  S.processos.filter(p => ['andamento', 'pausado'].includes(p.situacao) && calcFin(p).status === 'atrasado')
+    .forEach(p => atencao.push({ p, cor: 'vermelho', txt: `pagamento atrasado · ${valoresOcultos() ? '•••' : moeda(calcFin(p).atrasado)}` }));
+  pausaVencida.forEach(p => atencao.push({ p, cor: 'amarelo', txt: `pausa venceu em ${fmtD(p.retomar_em)} · retomar ou remarcar` }));
+  and.filter(p => p.aguardando === 'chefes').forEach(p => atencao.push({ p, cor: 'azul', txt: 'aguardando decisão dos chefes' }));
+
+  // ---- rotina: primeiro quem ainda não foi atualizado hoje (mais parados no topo)
+  const rot = [...and].sort((a, b) => (movHoje(a) - movHoje(b)) || diasParado(b) - diasParado(a) || a.cliente.localeCompare(b.cliente, 'pt-BR'));
+  const feitos = and.filter(movHoje).length;
+  const AGCOR = { cliente: 'amarelo', orgao: 'roxo', chefes: 'azul' };
+
+  const kpi = (n, l, { cor = '', ir = '', extra = '', zero = true, attr = '' } = {}) =>
+    `<div class="pd-k ${cor} ${zero && !n ? 'zero' : ''}" ${ir ? `data-ir="${ir}"` : ''} ${attr}><b>${n}</b><span>${l}${extra}</span></div>`;
+
   el.innerHTML = `
   <div class="topo"><h2>Painel do dia</h2>
     <button class="btn adm" id="b-alerta">✉ Enviar alerta do dia</button>
     <button class="btn pri adm" id="b-novo">＋ Novo processo</button>
-    <div class="sub">${d.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })} · modo padrão do diário: <b>${S.config.modo_padrao === 'repetir' ? 'repetir o último status' : 'sem movimentação'}</b></div></div>
-  <div class="kpis">
-    <div class="card kpi" data-ir="andamento"><div class="v">${and.length}</div><div class="l">Em andamento</div></div>
-    <div class="card kpi alerta" data-ir="andamento"><div class="v">${parados.length}</div><div class="l">Parados há ${S.config.alerta_dias}+ dias</div></div>
-    <div class="card kpi atenc" data-ir="andamento"><div class="v">${and.filter(p => p.aguardando === 'cliente').length}</div><div class="l">Aguardando cliente</div></div>
-    <div class="card kpi atenc" data-ir="pausado"><div class="v">${S.processos.filter(p => p.situacao === 'pausado').length}</div><div class="l">Pausados${pausaVencida.length ? ` · ${pausaVencida.length} para retomar` : ''}</div></div>
-    ${(() => { const t = finTotais(finAtivos()); return t.valor ? `<div class="card kpi ${t.atraso > 0 ? 'alerta' : ''}" data-relfin="1"><div class="v">${t.nAberto}</div><div class="l">A receber · ${moeda(t.falta)}${t.nAtraso ? ` · <b class="falta">${t.nAtraso} em atraso</b>` : ''}</div></div>` : ''; })()}
-    <div class="card kpi bom" data-rel="1"><div class="v">${fimMes.length}</div><div class="l">Finalizados no mês · ${moeda(fimMes.reduce((s, p) => s + (+p.gratificacao || 0), 0))} ${botaoOlho()}</div></div>
+    <div class="sub">${(t => t[0].toUpperCase() + t.slice(1))(d.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' }))}</div></div>
+
+  <div class="card pd-resumo">
+    ${kpi(and.length, 'em andamento', { ir: 'andamento', zero: false })}
+    ${kpi(and.filter(p => p.aguardando === 'cliente').length, 'aguardando cliente', { cor: 'amarelo', ir: 'andamento' })}
+    ${kpi(pausados.length, 'pausados', { cor: 'amarelo', ir: 'pausado' })}
+    ${fin.valor ? kpi(fin.nAberto, 'a receber', { cor: fin.nAtraso ? 'vermelho' : '', attr: 'data-relfin="1"', extra: `<em>${valoresOcultos() ? '•••' : moeda(fin.falta)}${fin.nAtraso ? ` · ${fin.nAtraso} atrasado${fin.nAtraso > 1 ? 's' : ''}` : ''}</em>` }) : ''}
+    ${kpi(fimMes.length, 'finalizados no mês', { cor: 'verde', attr: 'data-rel="1"', extra: `<em>${moeda(fimMes.reduce((s, p) => s + (+p.gratificacao || 0), 0))} ${botaoOlho()}</em>` })}
   </div>
-  ${pausaVencida.length ? `<div class="aviso amarelo">⏰ Pausas com data de retomada vencida: ${pausaVencida.map(p => `<a href="#" data-proc="${p.id}">${h(p.cliente)}</a>`).join(', ')}</div>` : ''}
-  <div class="secao"><h3>Rotina de hoje</h3><span class="dica">Escreva o status do dia. Se ficar em branco, o processo segue o modo dele (${S.config.modo_padrao === 'repetir' ? 'repete o último status' : 'fica sem movimentação'}).</span></div>
-  <div class="card">
-    ${and.length ? and.sort((a, b) => a.cliente.localeCompare(b.cliente)).map(p => {
-      const feito = atualDe(p.id).filter(a => a.data === hoje()).at(-1); const st = statusAtual(p); const pr = progresso(p);
-      return `<div class="rotina-linha ${feito ? 'feito' : ''}">
-        <div class="nm"><b><a href="#" data-proc="${p.id}" style="color:inherit">${h(p.cliente)}</a></b><small>${h(pr.atual ? pr.atual.nome : (p.servico || ''))}</small></div>
-        ${admin() ? `<input data-rot="${p.id}" placeholder="${h(st.txt)}${st.rep ? ' (mantido)' : ''}" value="${feito ? h(feito.texto) : ''}" ${feito ? 'data-ja="1"' : ''} list="dl-frases">` : `<div>${st.auto ? `<i style="color:var(--sub)">${h(st.txt)}</i>` : h(st.txt)}</div>`}
-        <span class="chip ${feito ? 'verde' : ''}">${feito ? '✔ registrado' : (modoDe(p) === 'repetir' ? 'repete' : 'sem mov.')}</span></div>`;
-    }).join('') : '<div class="vazio">Nenhum processo em andamento.</div>'}
-    ${admin() && and.length ? `<div class="ed-barra" style="justify-content:flex-end"><span class="dica" style="margin-right:auto;color:var(--sub);font-size:12px">${semHoje.length} sem registro hoje</span><button class="btn pri" id="b-rotina">Salvar rotina do dia</button></div>` : ''}
+
+  <div class="secao"><h3>Pede atenção</h3>${atencao.length ? `<span class="dica">${atencao.length} ${atencao.length === 1 ? 'item' : 'itens'}</span>` : ''}</div>
+  ${atencao.length ? `<div class="card pd-aten">${atencao.map(x => `<button class="pd-al" data-proc="${x.p.id}"><i class="pt ${x.cor}"></i><b>${h(x.p.cliente)}</b><span>${h(x.txt)}</span><span class="seta">›</span></button>`).join('')}</div>`
+    : `<div class="card pd-tudo-ok">✓ Nada urgente hoje. Nenhum processo parado há ${ALERTA}+ dias, sem pausas vencidas nem pagamentos atrasados.</div>`}
+
+  <div class="secao pd-rot-cab"><h3>Rotina de hoje</h3>
+    ${and.length ? `<div class="pd-prog"><span><b id="pd-n">${feitos}</b> de ${and.length} atualizados hoje</span><div class="barra"><div id="pd-bar" style="width:${Math.round(feitos / and.length * 100)}%"></div></div></div>` : ''}</div>
+  ${admin() && and.length ? `<p class="pd-dica">Escreva só a novidade de hoje. Campo em branco = ${S.config.modo_padrao === 'repetir' ? 'mantém o último status' : 'fica como “sem movimentação”'}. <kbd>Enter</kbd> pula para o próximo.</p>` : ''}
+  <div class="pd-lista">
+    ${rot.length ? rot.map(p => {
+      const feito = atualDe(p.id).filter(a => a.data === hoje() && a.tipo === 'registro').at(-1);
+      const ok = movHoje(p), pr = progresso(p), ult = ultimoMovimento(p), dp = diasParado(p);
+      const ag = p.aguardando || 'jopec';
+      return `<div class="card pd-rt ${ok ? 'ok' : ''} ${dp >= ALERTA ? 'parado' : ''}">
+        <div class="pd-info">
+          <div class="pd-l1"><a href="#" class="pd-nome" data-proc="${p.id}">${h(p.cliente)}</a>
+            ${ok ? '<span class="chip verde">✓ hoje</span>' : `<span class="chip ${dp >= ALERTA ? 'vermelho' : ''}">${dp === 0 ? 'hoje' : dp === 1 ? 'há 1 dia' : `há ${dp} dias`}</span>`}
+            ${ag !== 'jopec' ? `<span class="chip ${AGCOR[ag] || ''}">${h(AGUARDANDO[ag])}</span>` : ''}</div>
+          ${pr.total ? `<div class="pd-et"><span>Etapa ${Math.min(pr.idx, pr.total)}/${pr.total} · <b>${h(pr.atual ? pr.atual.nome : 'todas concluídas')}</b></span><div class="barra"><div style="width:${pr.pct}%"></div></div></div>` : `<div class="pd-et"><span>${h(p.servico || '')}</span></div>`}
+          <div class="pd-ult">${ult ? `<span>${ult.data === hoje() ? 'Hoje' : fmtD(ult.data).slice(0, 5)}:</span> ${h(ult.texto)}` : '<i>Nenhum status registrado ainda</i>'}</div>
+        </div>
+        ${admin() ? `<div class="pd-in">
+          <input data-rot="${p.id}" placeholder="Novidade de hoje…" value="${feito ? h(feito.texto) : ''}" ${feito ? 'data-ja="1"' : ''} list="dl-frases" aria-label="Novidade de hoje para ${h(p.cliente)}">
+          ${ult && !feito ? `<button class="btn sm ghost" data-rep="${p.id}" title="Copiar o último status para hoje">↺ Repetir último</button>` : ''}
+        </div>` : ''}
+      </div>`;
+    }).join('') : '<div class="card vazio">Nenhum processo em andamento.</div>'}
   </div>
-  <datalist id="dl-frases">${S.config.frases.map(f => `<option value="${h(f)}">`).join('')}</datalist>
-  ${parados.length ? `<div class="secao"><h3>⚠ Precisam de atenção</h3><span class="dica">Sem movimento real há ${S.config.alerta_dias} dias ou mais</span></div><div class="grade">${parados.map(cartao).join('')}</div>` : ''}`;
+  ${admin() && and.length ? `<div class="pd-salvar"><span id="pd-pend">Nenhuma alteração</span><button class="btn pri" id="b-rotina" disabled>Salvar rotina do dia</button></div>` : ''}
+  <datalist id="dl-frases">${S.config.frases.map(f => `<option value="${h(f)}">`).join('')}</datalist>`;
+
   $$('[data-ir]', el).forEach(k => k.onclick = () => { S.view = 'processos'; S.aba = k.dataset.ir; render(); });
   $$('[data-rel]', el).forEach(k => k.onclick = () => { S.view = 'relatorio'; S.relAba = 'mes'; render(); });
   $$('[data-relfin]', el).forEach(k => k.onclick = () => { S.view = 'relatorio'; S.relAba = 'financeiro'; render(); });
   ligarOlho(el);
-  $$('a[data-proc]', el).forEach(a => a.onclick = e => { e.preventDefault(); abrirDetalhe(a.dataset.proc); });
-  ligarCartoes(el);
+  $$('[data-proc]', el).forEach(a => a.onclick = e => { e.preventDefault(); abrirDetalhe(a.dataset.proc); });
   const bn = $('#b-novo', el); if (bn) bn.onclick = () => formProcesso();
   const bal = $('#b-alerta', el); if (bal) bal.onclick = () => escolherAlerta();
+
+  const ins = $$('[data-rot]', el);
+  const mudou = inp => inp.value.trim() && inp.value.trim() !== (inp.defaultValue || '').trim();
+  const contar = () => {
+    const n = ins.filter(mudou).length, b = $('#b-rotina', el); if (!b) return;
+    b.disabled = !n; $('#pd-pend', el).textContent = n ? `${n} ${n === 1 ? 'atualização' : 'atualizações'} para salvar` : 'Nenhuma alteração';
+    $('.pd-salvar', el).classList.toggle('tem', !!n);
+    ins.forEach(i => i.closest('.pd-rt').classList.toggle('editando', !!mudou(i)));
+  };
+  ins.forEach((inp, i) => {
+    inp.oninput = contar;
+    inp.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); const nx = ins[i + 1]; if (nx) nx.focus(); else $('#b-rotina', el)?.focus(); } };
+  });
+  $$('[data-rep]', el).forEach(b => b.onclick = () => {
+    const inp = $(`[data-rot="${b.dataset.rep}"]`, el); const u = ultimoMovimento(S.processos.find(p => p.id === b.dataset.rep));
+    if (inp && u) { inp.value = u.texto.replace(/^[✔✓▶⏸✕]\s*/, ''); contar(); inp.focus(); }
+  });
   const br = $('#b-rotina', el); if (br) br.onclick = () => acao(async () => {
-    for (const inp of $$('[data-rot]', el)) {
+    for (const inp of ins) {
       const v = inp.value.trim(); const pid = inp.dataset.rot;
       const hojeRegs = atualDe(pid).filter(a => a.data === hoje() && a.tipo === 'registro');
       if (!v) continue;
@@ -1445,42 +1498,56 @@ async function telaPublica(token) {
     }
   } catch (e) { console.warn(e); }
   if (!dados) { $('#app').innerHTML = `<div class="login"><div class="login-box" style="text-align:center"><h1 style="font-family:var(--f-display)">Link inválido ou desativado</h1><p>Peça um link novo ao Departamento de Legalização da JOPEC.</p></div></div>`; return; }
-  const PS = { aba: 'andamento', busca: '' };
+  const PS = { aba: 'andamento', busca: '', abertos: new Set() };
   const lista = dados.processos || [];
+  const AGCOR = { cliente: 'amarelo', orgao: 'roxo', chefes: 'azul' };
+  const diasDesde = d => d ? Math.max(0, Math.round((parseD(hoje()) - parseD(d)) / 864e5)) : null;
   const desenhar = () => {
     const q = normEt(PS.busca);
+    const n = k => lista.filter(p => p.situacao === k).length;
+    const abas = ['andamento', 'pausado', 'finalizado', 'desistencia'].filter(k => k === 'andamento' || n(k));
+    if (!abas.includes(PS.aba)) PS.aba = 'andamento';
     const vis = lista.filter(p => p.situacao === PS.aba && (!q || normEt(p.cliente + ' ' + (p.servico || '')).includes(q)))
-      .sort((a, b) => PS.aba === 'andamento' ? a.cliente.localeCompare(b.cliente) : (b.data_conclusao || '').localeCompare(a.data_conclusao || ''));
-    const abas = ['andamento', 'pausado', 'finalizado', 'desistencia'];
+      .sort((a, b) => PS.aba === 'andamento' ? a.cliente.localeCompare(b.cliente, 'pt-BR') : (b.data_conclusao || '').localeCompare(a.data_conclusao || ''));
     $('#app').innerHTML = `
     <div class="shell"><header class="band"><div class="wrap topbar"><div class="brand">${LOGO_MARCA}<div>${LOGO_NOME}<h1>Legalização · Andamento dos processos</h1></div></div>
       <div class="usr"><span class="papel">👁 Somente leitura</span>${botaoTema()}</div></div></header>
-    <main class="main wrap">
-      <div class="topo"><h2>Andamento dos processos</h2><input class="busca" id="pb" placeholder="Buscar empresa ou serviço…" value="${h(PS.busca)}">
-        <div class="sub">Atualizado em ${new Date(dados.gerado).toLocaleString('pt-BR')} · atualize a página para ver as últimas mudanças</div></div>
-      <div class="tabs">${abas.map(k => `<button class="tab ${PS.aba === k ? 'on' : ''}" data-pa="${k}">${SITUACOES[k].ic} ${SITUACOES[k].nome}<span class="n">${lista.filter(p => p.situacao === k).length}</span></button>`).join('')}</div>
-      ${vis.length ? `<div style="display:flex;flex-direction:column;gap:12px">${vis.map(p => {
+    <main class="main wrap pub">
+      <div class="topo"><h2>Andamento dos processos</h2>
+        <div class="sub">Atualizado às ${new Date(dados.gerado).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} de ${new Date(dados.gerado).toLocaleDateString('pt-BR')} · a página se atualiza sozinha</div></div>
+      <div class="pub-barra">
+        <div class="tabs">${abas.map(k => `<button class="tab ${PS.aba === k ? 'on' : ''}" data-pa="${k}">${SITUACOES[k].nome}<span class="n">${n(k)}</span></button>`).join('')}</div>
+        ${lista.length > 6 ? `<input class="busca busca-proc" id="pb" type="search" placeholder="Buscar empresa…" value="${h(PS.busca)}" aria-label="Buscar empresa">` : ''}
+      </div>
+      ${vis.length ? `<div class="pub-lista">${vis.map(p => {
         const es = (p.etapas || []).filter(e => e.status !== 'dispensada'); const ok = es.filter(e => e.status === 'concluida').length;
         const at = es.find(e => e.status === 'andamento') || es.find(e => e.status === 'pendente');
         const pct = es.length ? Math.round(ok / es.length * 100) : 0;
-        return `<div class="card" style="padding:16px 18px;border-left:4px solid var(--navy)">
-          <div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap"><div style="flex:1;min-width:200px"><div class="nome" style="font:700 16px var(--f-display)">${h(p.cliente)}</div><div style="color:var(--sub);font-size:13px">${h(p.servico || '')}</div></div>
-            <div style="display:flex;gap:6px;flex-wrap:wrap"><span class="chip">${h(p.tipo_cliente || '')}</span>${p.situacao === 'andamento' ? `<span class="chip">${h(AGUARDANDO[p.aguardando] || '')}</span>` : ''}
-            ${p.situacao === 'finalizado' ? `<span class="chip verde">finalizado ${fmtD(p.data_conclusao)}</span>` : ''}
-      ${chipFin(p)}${p.situacao === 'desistencia' ? `<span class="chip vermelho">desistência ${fmtD(p.data_conclusao)}</span>` : ''}
-            ${p.situacao === 'pausado' ? `<span class="chip amarelo">pausado${p.retomar_em ? ' · retomar ' + fmtD(p.retomar_em) : ''}</span>` : ''}</div></div>
-          ${es.length ? `<div class="etapa-atual" style="margin-top:10px"><span>${p.situacao === 'andamento' && at ? `Etapa ${es.indexOf(at) + 1}/${es.length}: <b>${h(at.nome)}</b>` : `${ok}/${es.length} etapas concluídas`}</span><span>${pct}%</span></div><div class="barra" style="margin-top:4px"><div style="width:${pct}%"></div></div>
-          <div class="esteira" style="margin-top:8px">${es.map((e, i) => `<div class="passo ${e.status}"><div class="bola">${e.status === 'concluida' ? '✓' : i + 1}</div><div class="nm">${h(e.nome)}</div><div class="dt">${e.status === 'concluida' ? fmtD(e.concluida_em) : e.status === 'andamento' ? 'em andamento' : (e.prazo || '')}</div></div>`).join('')}</div>` : ''}
-          ${p.situacao === 'pausado' && p.pausa_motivo ? `<div class="aviso amarelo" style="margin:8px 0 0">⏸ ${h(p.pausa_motivo)}</div>` : ''}
-          ${p.situacao === 'desistencia' && p.desistencia_motivo ? `<div class="aviso vermelho" style="margin:8px 0 0">✕ ${h(p.desistencia_motivo)}</div>` : ''}
-          ${p.ultimo ? `<div class="status" style="margin-top:8px;font-size:13px;background:var(--bg);padding:8px 10px;border-radius:10px">Último status (${fmtD(p.ultimo.data)}): <b>${h(p.ultimo.texto)}</b></div>` : ''}
-        </div>`; }).join('')}</div>` : '<div class="card vazio">Nada por aqui.</div>'}
+        const ag = p.aguardando || 'jopec', dd = p.ultimo ? diasDesde(p.ultimo.data) : null, aberto = PS.abertos.has(p.id);
+        const chips = [
+          p.situacao === 'andamento' && ag !== 'jopec' ? `<span class="chip ${AGCOR[ag] || ''}">${h(AGUARDANDO[ag])}</span>` : '',
+          p.situacao === 'pausado' ? `<span class="chip amarelo">⏸ pausado${p.retomar_em ? ' até ' + fmtD(p.retomar_em).slice(0, 5) : ''}</span>` : '',
+          p.situacao === 'finalizado' ? `<span class="chip verde">✓ finalizado em ${fmtD(p.data_conclusao)}</span>` : '',
+          p.situacao === 'desistencia' && p.data_conclusao ? `<span class="chip">desistiu em ${fmtD(p.data_conclusao)}</span>` : '',
+        ].join('');
+        return `<article class="card pub-card ${p.situacao}">
+          <div class="pub-l1"><div class="pub-nm"><b>${h(p.cliente)}</b>${p.servico ? `<span>${h(p.servico)}</span>` : ''}</div>${chips ? `<div class="pub-chips">${chips}</div>` : ''}</div>
+          ${es.length && p.situacao !== 'desistencia' ? `<div class="pub-et"><div><span>${p.situacao === 'finalizado' ? 'Todas as etapas concluídas' : at ? `Etapa ${es.indexOf(at) + 1} de ${es.length} · <b>${h(at.nome)}</b>` : `${ok} de ${es.length} etapas`}</span><span class="pct">${pct}%</span></div><div class="barra"><div style="width:${pct}%"></div></div></div>` : ''}
+          ${p.situacao === 'pausado' && p.pausa_motivo ? `<div class="pub-mot">Motivo da pausa: ${h(p.pausa_motivo)}</div>` : ''}
+          ${p.situacao === 'desistencia' && p.desistencia_motivo ? `<div class="pub-mot">Motivo: ${h(p.desistencia_motivo)}</div>` : ''}
+          ${p.ultimo && p.situacao !== 'desistencia' ? `<div class="pub-ult"><span>${dd === 0 ? 'Hoje' : dd === 1 ? 'Ontem' : fmtD(p.ultimo.data).slice(0, 5)}</span>${h(p.ultimo.texto)}</div>` : ''}
+          ${es.length && p.situacao !== 'desistencia' ? `<button class="pub-ver" data-ver="${p.id}" aria-expanded="${aberto}">${aberto ? 'Ocultar etapas ▴' : `Ver as ${es.length} etapas ▾`}</button>
+            ${aberto ? `<ol class="pub-passos">${es.map(e => `<li class="${e.status}"><i>${e.status === 'concluida' ? '✓' : ''}</i><span>${h(e.nome)}</span><small>${e.status === 'concluida' ? fmtD(e.concluida_em) : e.status === 'andamento' ? 'em andamento' : ''}</small></li>`).join('')}</ol>` : ''}` : ''}
+        </article>`; }).join('')}</div>` : `<div class="card vazio">${q ? 'Nenhuma empresa encontrada.' : 'Nada por aqui.'}</div>`}
     </main></div>`;
     $$('[data-pa]').forEach(b => b.onclick = () => { PS.aba = b.dataset.pa; desenhar(); });
+    $$('[data-ver]').forEach(b => b.onclick = () => { const id = b.dataset.ver; PS.abertos.has(id) ? PS.abertos.delete(id) : PS.abertos.add(id); desenhar(); });
     ligarTema();
-    const pb = $('#pb'); pb.oninput = () => { PS.busca = pb.value; const pos = pb.selectionStart; desenhar(); const n = $('#pb'); n.focus(); n.setSelectionRange(pos, pos); };
+    const pb = $('#pb'); if (pb) pb.oninput = () => { PS.busca = pb.value; const pos = pb.selectionStart; desenhar(); const n = $('#pb'); n.focus(); n.setSelectionRange(pos, pos); };
   };
   desenhar();
+  // atualiza sozinho a cada 5 minutos
+  setInterval(async () => { try { if (MODO_DEMO) return; const { data } = await sb.rpc('leg_painel_publico', { p_token: token }); if (data) { dados = data; lista.splice(0, lista.length, ...(data.processos || [])); desenhar(); } } catch {} }, 5 * 60 * 1000);
 }
 
 // ---------------------------------------------------------------- modal
