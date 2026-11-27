@@ -13,7 +13,11 @@ const CORS = {
   "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
 };
 const json = (d: unknown, status = 200) => new Response(JSON.stringify(d), { status, headers: { ...CORS, "Content-Type": "application/json" } });
-const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
+const segredo = () => { // chave de serviço: a antiga (service_role) ou a nova (sb_secret_…)
+  const k = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"); if (k) return k;
+  try { const o = JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") || "{}"); return o.default || Object.values(o)[0] as string; } catch { return ""; }
+};
+const sb = createClient(Deno.env.get("SUPABASE_URL")!, segredo(), { auth: { persistSession: false } });
 const SITE = Deno.env.get("SITE_URL") || "https://controle-legalizacao.vercel.app/";
 
 type Chaves = { publica: string; privada: string };
