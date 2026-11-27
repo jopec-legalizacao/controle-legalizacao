@@ -165,6 +165,7 @@ async function carregar() {
   S.presets = p.sort((x, y) => (x.ordem ?? 0) - (y.ordem ?? 0) || x.nome.localeCompare(y.nome));
   S.processos = pr; S.etapas = e; S.atual = a;
   const g = c.find(x => x.chave === 'geral'); S.config = { ...CONFIG_PADRAO, ...(g ? g.valor : {}) };
+  const pu = c.find(x => x.chave === 'push'); S.push = { ativo: true, desde: '2026-11-01', ...(pu ? pu.valor : {}) };
   const pe = c.find(x => x.chave === 'pendencias'); S.pendencias = pe ? pe.valor : (window.LEG_PENDENCIAS || []);
 }
 async function acao(fn, msg) {
@@ -1464,9 +1465,18 @@ async function desenharLinkPublico() {
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <input class="busca" style="max-width:none;flex:1" readonly value="${h(urlPublica(ativo.token))}" id="lk-url">
       <button class="btn pri" id="lk-copiar">Copiar link</button><a class="btn" href="${h(urlPublica(ativo.token))}" target="_blank">Abrir</a></div>
-    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="btn" id="lk-novo">↻ Gerar link novo (o atual para de funcionar)</button><button class="btn dang" id="lk-off">Desativar link</button></div>`
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="btn" id="lk-novo">↻ Gerar link novo (o atual para de funcionar)</button><button class="btn dang" id="lk-off">Desativar link</button></div>
+    <div class="pn-adm" id="lk-push"><div class="pn-adm-l"><b>🔔 Avisos no celular</b><span id="lk-push-n">Quem abre o link pode tocar no sino 🔔 e receber avisos de processos novos, andamento e finalizados.</span></div>
+      <label class="pn-sw"><input type="checkbox" id="lk-push-on" ${S.push?.ativo !== false ? 'checked' : ''}> Enviar avisos</label>
+      <label class="pn-sw">a partir de <input type="date" id="lk-push-desde" value="${h(S.push?.desde || '2026-11-01')}"></label></div>`
     : `<p style="margin-top:0">Nenhum link público ativo.</p><button class="btn pri" id="lk-novo">Gerar link público</button>`;
   if (!box.isConnected) return; // a pessoa já saiu da tela de Configurações
+  if (ativo && !MODO_DEMO) sb.from('leg_push_inscricoes').select('aparelho', { count: 'exact' }).eq('token', ativo.token).then(({ data, count, error }) => {
+    const el = $('#lk-push-n'); if (!el || error) return;
+    el.textContent = count ? `${count} aparelho${count > 1 ? 's' : ''} recebendo avisos${data?.length ? ' (' + [...new Set(data.map(x => x.aparelho).filter(Boolean))].slice(0, 4).join(', ') + ')' : ''}.` : 'Ninguém ativou ainda. Quem abre o link toca no sino 🔔 para receber avisos.';
+  });
+  const salvaPush = async () => { const v = { ativo: $('#lk-push-on').checked, desde: $('#lk-push-desde').value || '2026-11-01' }; try { await DB.salvaChave('push', v); S.push = v; toast(v.ativo ? 'Avisos ligados' : 'Avisos pausados para todos'); } catch (e) { avisar('Não foi possível salvar: ' + (e.message || e)); } };
+  const pon = $('#lk-push-on'); if (pon) { pon.onchange = salvaPush; $('#lk-push-desde').onchange = salvaPush; }
   const novoToken = () => [...crypto.getRandomValues(new Uint8Array(18))].map(b => 'abcdefghijkmnpqrstuvwxyz23456789'[b % 32]).join('');
   const salvar = async (fn) => { try { await fn(); desenharLinkPublico(); } catch (e) { avisar('Não foi possível: ' + (e.message || e)); } };
   const bc = $('#lk-copiar'); if (bc) bc.onclick = async () => { try { await navigator.clipboard.writeText($('#lk-url').value); toast('Link copiado'); } catch { $('#lk-url').select(); document.execCommand('copy'); toast('Link copiado'); } };
@@ -1482,11 +1492,94 @@ async function desenharLinkPublico() {
     const { error } = await sb.from('leg_link_publico').update({ ativo: false }).eq('ativo', true); if (error) throw error; toast('Link desativado'); }); };
 }
 
+// ---------------------------------------------------------------- notificações no celular (link público)
+const PUSH_TIPOS = { novo: ['🆕', 'Processos novos', 'quando um processo entra na esteira'], andamento: ['▶', 'Andamento', 'status do dia, etapas, pausas e retomadas'], finalizado: ['✔', 'Finalizados', 'quando um processo é concluído'] };
+const PUSH = {
+  suportado: () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window,
+  ios: () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1),
+  instalado: () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true,
+  async inscricao() { try { const r = await navigator.serviceWorker.getRegistration(); return r ? await r.pushManager.getSubscription() : null; } catch { return null; } },
+  aparelho() {
+    const u = navigator.userAgent;
+    const so = /iphone/i.test(u) ? 'iPhone' : /ipad/i.test(u) || PUSH.ios() ? 'iPad' : /android/i.test(u) ? 'Android' : /windows/i.test(u) ? 'Windows' : /mac/i.test(u) ? 'Mac' : 'Outro';
+    const nav = /edg\//i.test(u) ? 'Edge' : /samsungbrowser/i.test(u) ? 'Samsung' : /firefox|fxios/i.test(u) ? 'Firefox' : /crios|chrome/i.test(u) ? 'Chrome' : /safari/i.test(u) ? 'Safari' : '';
+    return `${so}${nav ? ' · ' + nav : ''}${PUSH.instalado() ? ' (app)' : ''}`;
+  },
+  chaveBytes(b64) { const p = '='.repeat((4 - b64.length % 4) % 4), r = atob((b64 + p).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(r, c => c.charCodeAt(0)); },
+};
+async function chamarPush(body) {
+  const { data, error } = await sb.functions.invoke('push-publico', { body });
+  if (error) { let m = error.message; try { const c = await error.context.json(); if (c?.erro) m = c.erro; } catch {} throw new Error(m); }
+  if (data?.erro) throw new Error(data.erro);
+  return data;
+}
+async function formNotificacoes(token, aoMudar) {
+  const sub = await PUSH.inscricao();
+  let minha = null;
+  if (sub && !MODO_DEMO) { try { const { data } = await sb.rpc('leg_push_minha', { p_endpoint: sub.endpoint }); minha = data; } catch {} }
+  const ativo = !!(sub && minha && Notification.permission === 'granted');
+  const tipos = new Set(ativo ? minha.tipos : Object.keys(PUSH_TIPOS));
+  const bloqueado = PUSH.suportado() && Notification.permission === 'denied';
+  const precisaInstalar = PUSH.ios() && !PUSH.instalado();
+  const semSuporte = !PUSH.suportado() && !precisaInstalar;
+  const caixa = k => `<label class="pn-op"><input type="checkbox" data-pt="${k}" ${tipos.has(k) ? 'checked' : ''}><span class="pn-ic">${PUSH_TIPOS[k][0]}</span><span><b>${PUSH_TIPOS[k][1]}</b><small>${PUSH_TIPOS[k][2]}</small></span></label>`;
+  modal(`<div class="cab"><div style="flex:1"><h3>🔔 Avisos no celular</h3><div class="sub">${ativo ? '<span class="pn-on">● Ativado neste aparelho</span>' : 'Receba um aviso quando houver novidade nos processos'}</div></div><button class="btn ghost" data-fechar aria-label="Fechar">✕</button></div>
+  <div class="corpo">
+    ${MODO_DEMO ? '<div class="aviso amarelo">Modo demonstração: os avisos só funcionam com o Supabase ligado.</div>' : ''}
+    ${precisaInstalar ? `<div class="pn-passo"><b>No iPhone, falta um passo antes:</b><ol>
+        <li>Toque em <b>Compartilhar</b> <span class="pn-k">⬆︎</span> na barra do Safari.</li>
+        <li>Escolha <b>Adicionar à Tela de Início</b> e toque em <b>Adicionar</b>.</li>
+        <li>Abra o ícone <b>Legalização</b> que apareceu na tela e toque em 🔔 de novo.</li></ol>
+        <small>A Apple só libera avisos para sites colocados na Tela de Início (iOS 16.4 ou mais novo).</small></div>` : ''}
+    ${semSuporte ? '<div class="aviso amarelo">Este navegador não aceita notificações. No Android use o Chrome; no iPhone, o Safari (iOS 16.4 ou mais novo).</div>' : ''}
+    ${bloqueado ? `<div class="aviso amarelo">As notificações deste site estão <b>bloqueadas</b> no navegador. Toque no cadeado ao lado do endereço → <b>Permissões</b> → <b>Notificações</b> → Permitir, e depois tente de novo.</div>` : ''}
+    <p class="pn-txt">Escolha o que você quer receber. Os avisos valem para os processos de <b>novembro de 2026 em diante</b>.</p>
+    <div class="pn-ops">${Object.keys(PUSH_TIPOS).map(caixa).join('')}</div>
+    <p class="pn-txt" style="margin-bottom:0"><small>Nada muda nos processos: é só leitura. Você pode desativar quando quiser, aqui mesmo.</small></p>
+  </div>
+  <div class="rod">${ativo ? '<button class="btn dang" id="pn-off">Desativar</button><button class="btn" id="pn-teste">Enviar teste</button><button class="btn pri" id="pn-ok">Salvar escolhas</button>'
+    : `<button class="btn" data-fechar>Agora não</button><button class="btn pri" id="pn-ok" ${MODO_DEMO || precisaInstalar || semSuporte ? 'disabled' : ''}>🔔 Ativar avisos</button>`}</div>`);
+  const escolhidos = () => $$('[data-pt]').filter(x => x.checked).map(x => x.dataset.pt);
+  const ocupado = (b, t) => { b.disabled = true; b.dataset.t = b.textContent; b.textContent = t; };
+  const livre = b => { b.disabled = false; b.textContent = b.dataset.t; };
+  $('#pn-ok').onclick = async () => {
+    const b = $('#pn-ok'), tp = escolhidos();
+    if (!tp.length) return toast('Marque pelo menos uma opção', 'erro');
+    ocupado(b, 'Ativando…');
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') { livre(b); return avisar('Permissão negada: Para receber os avisos, permita as notificações quando o navegador perguntar. Se não aparecer a pergunta, libere nas configurações do site (cadeado ao lado do endereço).'); }
+      const reg = await navigator.serviceWorker.ready;
+      let s = await reg.pushManager.getSubscription();
+      if (!s) { const { chave } = await chamarPush({ acao: 'chave' }); s = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: PUSH.chaveBytes(chave) }); }
+      const { data, error } = await sb.rpc('leg_push_inscrever', { p_token: token, p_inscricao: s.toJSON(), p_tipos: tp, p_aparelho: PUSH.aparelho() });
+      if (error) throw error; if (!data) throw new Error('O link público foi desativado ou trocado.');
+      fecharModal(); toast(ativo ? 'Escolhas salvas ✔' : 'Avisos ativados neste aparelho 🔔'); aoMudar && aoMudar();
+      if (!ativo) chamarPush({ acao: 'teste', endpoint: s.endpoint }).catch(() => {});
+    } catch (e) { console.warn(e); livre(b); avisar('Não foi possível ativar: ' + (e.message || e)); }
+  };
+  const bt = $('#pn-teste'); if (bt) bt.onclick = async () => { ocupado(bt, 'Enviando…'); try { await chamarPush({ acao: 'teste', endpoint: sub.endpoint }); toast('Teste enviado. Deve chegar em segundos.'); } catch (e) { avisar('Não foi possível enviar o teste: ' + e.message); } livre(bt); };
+  const bo = $('#pn-off'); if (bo) bo.onclick = async () => { ocupado(bo, 'Desativando…'); try { await sb.rpc('leg_push_cancelar', { p_endpoint: sub.endpoint }); await sub.unsubscribe(); fecharModal(); toast('Avisos desativados neste aparelho'); aoMudar && aoMudar(); } catch (e) { livre(bo); avisar('Não foi possível desativar: ' + e.message); } };
+}
+
 // Página pública (somente leitura, sem login): ?p=TOKEN
 async function telaPublica(token) {
   document.body.className = 'publico';
+  // quem instala pelo link público abre direto no andamento (e no iPhone isso libera os avisos)
+  if (!MODO_DEMO) { const lm = document.querySelector('link[rel=manifest]'); if (lm) lm.href = '/api/manifest?p=' + encodeURIComponent(token); }
   $('#app').innerHTML = `<div class="carregando">Carregando andamento…</div>`;
-  let dados = null;
+  const qs = new URLSearchParams(location.search);
+  let dados = null, novidades = [];
+  const buscarNovidades = async () => {
+    if (MODO_DEMO) {
+      const db = DB.demo(), pr = db[T.processos] || [], vis = ['andamento', 'pausado', 'finalizado', 'desistencia'], d0 = '2026-11-01';
+      const ok = id => pr.find(p => p.id === id && vis.includes(p.situacao));
+      return [...(db[T.atual] || []).filter(a => a.data >= d0 && a.tipo !== 'sistema' && !/triagem da planilha/i.test(a.texto) && ok(a.processo_id)).map(a => { const p = ok(a.processo_id); return { processo_id: p.id, cliente: p.cliente, servico: p.servico, situacao: p.situacao, categoria: a.tipo === 'finalizado' ? 'finalizado' : 'andamento', tipo: a.tipo, texto: a.texto, data: a.data, q: a.data + ' ' + (a.criado_em || '') }; }),
+        ...pr.filter(p => (p.data_inicio || '') >= d0 && vis.includes(p.situacao)).map(p => ({ processo_id: p.id, cliente: p.cliente, servico: p.servico, situacao: p.situacao, categoria: 'novo', tipo: 'novo', texto: 'Processo colocado na esteira', data: p.data_inicio, q: p.data_inicio + ' 0' }))]
+        .sort((x, y) => y.q.localeCompare(x.q)).slice(0, 300);
+    }
+    try { const { data } = await sb.rpc('leg_push_novidades', { p_token: token }); return data || []; } catch { return []; }
+  };
   try {
     if (MODO_DEMO) {
       const db = DB.demo(); if (!(db.leg_link_publico || []).some(r => r.ativo && r.token === token)) throw new Error('x');
@@ -1496,30 +1589,45 @@ async function telaPublica(token) {
     } else {
       const { data, error } = await sb.rpc('leg_painel_publico', { p_token: token }); if (error) throw error; dados = data;
     }
+    novidades = await buscarNovidades();
   } catch (e) { console.warn(e); }
   if (!dados) { $('#app').innerHTML = `<div class="login"><div class="login-box" style="text-align:center"><h1 style="font-family:var(--f-display)">Link inválido ou desativado</h1><p>Peça um link novo ao Departamento de Legalização da JOPEC.</p></div></div>`; return; }
-  const PS = { aba: 'andamento', busca: '', abertos: new Set() };
+  const PS = { aba: qs.get('aba') === 'novidades' ? 'novidades' : 'andamento', busca: '', abertos: new Set(), filtroNov: '', avisos: false };
   const lista = dados.processos || [];
   const AGCOR = { cliente: 'amarelo', orgao: 'roxo', chefes: 'azul' };
   const diasDesde = d => d ? Math.max(0, Math.round((parseD(hoje()) - parseD(d)) / 864e5)) : null;
+  const ICN = { novo: '🆕', finalizado: '✔', pausa: '⏸', retomada: '▶', desistencia: '✕', etapa: '◆', registro: '•' };
+  const rotuloDia = d => { const n = diasDesde(d); return n === 0 ? 'Hoje' : n === 1 ? 'Ontem' : `${DS[parseD(d).getDay()]}, ${fmtD(d)}`; };
+  const estadoSino = async () => { const s = await PUSH.inscricao(), antes = PS.avisos; PS.avisos = !!(s && PUSH.suportado() && Notification.permission === 'granted'); if (antes !== PS.avisos && !$('#modal-root').innerHTML) desenhar(); };
+  const htmlNovidades = q => {
+    const its = novidades.filter(x => (!PS.filtroNov || x.categoria === PS.filtroNov) && (!q || normEt(x.cliente + ' ' + (x.servico || '') + ' ' + x.texto).includes(q)));
+    const grupos = []; its.forEach(x => { const g = grupos.at(-1); if (g && g.d === x.data) g.its.push(x); else grupos.push({ d: x.data, its: [x] }); });
+    return `<div class="pn-filtros">${[['', 'Tudo'], ...Object.entries(PUSH_TIPOS).map(([k, v]) => [k, v[1]])].map(([k, nm]) => `<button class="chip-f ${PS.filtroNov === k ? 'on' : ''}" data-fn="${k}">${nm}</button>`).join('')}
+        <button class="pn-cta ${PS.avisos ? 'on' : ''}" data-sino>${PS.avisos ? '🔔 Avisos ativados' : '🔔 Receber avisos no celular'}</button></div>
+      ${grupos.length ? grupos.map(g => `<div class="nov-dia">${h(rotuloDia(g.d))}</div><div class="card nov-lista">${g.its.map(x => `
+        <button class="nov-it ${x.categoria}" data-np="${h(x.processo_id)}"><i>${ICN[x.tipo] || '•'}</i><span><b>${h(x.cliente)}</b>${x.tipo === 'novo' && x.servico ? `<small>${h(x.servico)}</small>` : ''}<em>${h(x.tipo === 'novo' ? 'Novo processo na esteira' : String(x.texto).replace(/^[✔⏸▶✕]\s*/, ''))}</em></span></button>`).join('')}</div>`).join('')
+        : `<div class="card vazio">${q || PS.filtroNov ? 'Nenhuma novidade com esse filtro.' : 'Ainda não há novidades desde 01/11/2026.'}</div>`}
+      <p class="nov-rod">Mostrando as novidades de 01/11/2026 em diante.</p>`;
+  };
   const desenhar = () => {
     const q = normEt(PS.busca);
     const n = k => lista.filter(p => p.situacao === k).length;
     const abas = ['andamento', 'pausado', 'finalizado', 'desistencia'].filter(k => k === 'andamento' || n(k));
-    if (!abas.includes(PS.aba)) PS.aba = 'andamento';
+    if (PS.aba !== 'novidades' && !abas.includes(PS.aba)) PS.aba = 'andamento';
+    const nNov = novidades.filter(x => diasDesde(x.data) <= 6).length;
     const vis = lista.filter(p => p.situacao === PS.aba && (!q || normEt(p.cliente + ' ' + (p.servico || '')).includes(q)))
       .sort((a, b) => PS.aba === 'andamento' ? a.cliente.localeCompare(b.cliente, 'pt-BR') : (b.data_conclusao || '').localeCompare(a.data_conclusao || ''));
     $('#app').innerHTML = `
     <div class="shell"><header class="band"><div class="wrap topbar"><div class="brand">${LOGO_MARCA}<div>${LOGO_NOME}<h1>Legalização · Andamento dos processos</h1></div></div>
-      <div class="usr"><span class="papel">👁 Somente leitura</span>${botaoTema()}</div></div></header>
+      <div class="usr"><span class="papel">👁 Somente leitura</span><button class="btn-tema btn-sino ${PS.avisos ? 'on' : ''}" id="b-sino" data-sino title="Avisos no celular" aria-label="Avisos no celular">🔔</button>${botaoTema()}</div></div></header>
     <main class="main wrap pub">
       <div class="topo"><h2>Andamento dos processos</h2>
         <div class="sub">Atualizado às ${new Date(dados.gerado).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} de ${new Date(dados.gerado).toLocaleDateString('pt-BR')} · a página se atualiza sozinha</div></div>
       <div class="pub-barra">
-        <div class="tabs">${abas.map(k => `<button class="tab ${PS.aba === k ? 'on' : ''}" data-pa="${k}">${SITUACOES[k].nome}<span class="n">${n(k)}</span></button>`).join('')}</div>
-        ${lista.length > 6 ? `<input class="busca busca-proc" id="pb" type="search" placeholder="Buscar empresa…" value="${h(PS.busca)}" aria-label="Buscar empresa">` : ''}
+        <div class="tabs">${abas.map(k => `<button class="tab ${PS.aba === k ? 'on' : ''}" data-pa="${k}">${SITUACOES[k].nome}<span class="n">${n(k)}</span></button>`).join('')}<button class="tab ${PS.aba === 'novidades' ? 'on' : ''}" data-pa="novidades">Novidades${nNov ? `<span class="n">${nNov}</span>` : ''}</button></div>
+        ${lista.length > 6 || PS.aba === 'novidades' ? `<input class="busca busca-proc" id="pb" type="search" placeholder="${PS.aba === 'novidades' ? 'Buscar nas novidades…' : 'Buscar empresa…'}" value="${h(PS.busca)}" aria-label="Buscar">` : ''}
       </div>
-      ${vis.length ? `<div class="pub-lista">${vis.map(p => {
+      ${PS.aba === 'novidades' ? htmlNovidades(q) : vis.length ? `<div class="pub-lista">${vis.map(p => {
         const es = (p.etapas || []).filter(e => e.status !== 'dispensada'); const ok = es.filter(e => e.status === 'concluida').length;
         const at = es.find(e => e.status === 'andamento') || es.find(e => e.status === 'pendente');
         const pct = es.length ? Math.round(ok / es.length * 100) : 0;
@@ -1530,7 +1638,7 @@ async function telaPublica(token) {
           p.situacao === 'finalizado' ? `<span class="chip verde">✓ finalizado em ${fmtD(p.data_conclusao)}</span>` : '',
           p.situacao === 'desistencia' && p.data_conclusao ? `<span class="chip">desistiu em ${fmtD(p.data_conclusao)}</span>` : '',
         ].join('');
-        return `<article class="card pub-card ${p.situacao}">
+        return `<article class="card pub-card ${p.situacao}" id="pc-${h(p.id)}">
           <div class="pub-l1"><div class="pub-nm"><b>${h(p.cliente)}</b>${p.servico ? `<span>${h(p.servico)}</span>` : ''}</div>${chips ? `<div class="pub-chips">${chips}</div>` : ''}</div>
           ${es.length && p.situacao !== 'desistencia' ? `<div class="pub-et"><div><span>${p.situacao === 'finalizado' ? 'Todas as etapas concluídas' : at ? `Etapa ${es.indexOf(at) + 1} de ${es.length} · <b>${h(at.nome)}</b>` : `${ok} de ${es.length} etapas`}</span><span class="pct">${pct}%</span></div><div class="barra"><div style="width:${pct}%"></div></div></div>` : ''}
           ${p.situacao === 'pausado' && p.pausa_motivo ? `<div class="pub-mot">Motivo da pausa: ${h(p.pausa_motivo)}</div>` : ''}
@@ -1540,14 +1648,22 @@ async function telaPublica(token) {
             ${aberto ? `<ol class="pub-passos">${es.map(e => `<li class="${e.status}"><i>${e.status === 'concluida' ? '✓' : ''}</i><span>${h(e.nome)}</span><small>${e.status === 'concluida' ? fmtD(e.concluida_em) : e.status === 'andamento' ? 'em andamento' : ''}</small></li>`).join('')}</ol>` : ''}` : ''}
         </article>`; }).join('')}</div>` : `<div class="card vazio">${q ? 'Nenhuma empresa encontrada.' : 'Nada por aqui.'}</div>`}
     </main></div>`;
-    $$('[data-pa]').forEach(b => b.onclick = () => { PS.aba = b.dataset.pa; desenhar(); });
+    $$('[data-pa]').forEach(b => b.onclick = () => { if ((PS.aba === 'novidades') !== (b.dataset.pa === 'novidades')) PS.busca = ''; PS.aba = b.dataset.pa; desenhar(); });
     $$('[data-ver]').forEach(b => b.onclick = () => { const id = b.dataset.ver; PS.abertos.has(id) ? PS.abertos.delete(id) : PS.abertos.add(id); desenhar(); });
+    $$('[data-fn]').forEach(b => b.onclick = () => { PS.filtroNov = b.dataset.fn; desenhar(); });
+    $$('[data-sino]').forEach(b => b.onclick = () => formNotificacoes(token, async () => { await estadoSino(); desenhar(); }));
+    $$('[data-np]').forEach(b => b.onclick = () => { const p = lista.find(x => x.id === b.dataset.np); if (!p) return; PS.aba = p.situacao; PS.busca = ''; PS.abertos.add(p.id); desenhar();
+      const el = document.getElementById('pc-' + p.id); if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.add('destaque'); setTimeout(() => el.classList.remove('destaque'), 1800); } });
     ligarTema();
     const pb = $('#pb'); if (pb) pb.oninput = () => { PS.busca = pb.value; const pos = pb.selectionStart; desenhar(); const n = $('#pb'); n.focus(); n.setSelectionRange(pos, pos); };
   };
   desenhar();
-  // atualiza sozinho a cada 5 minutos
-  setInterval(async () => { try { if (MODO_DEMO) return; const { data } = await sb.rpc('leg_painel_publico', { p_token: token }); if (data) { dados = data; lista.splice(0, lista.length, ...(data.processos || [])); desenhar(); } } catch {} }, 5 * 60 * 1000);
+  estadoSino();
+  // atualiza sozinho a cada 5 minutos e quando a pessoa volta para a página (ex.: tocou numa notificação)
+  let ultima = Date.now();
+  const atualizar = async () => { try { if (MODO_DEMO) return; ultima = Date.now(); const { data } = await sb.rpc('leg_painel_publico', { p_token: token }); if (data) { dados = data; lista.splice(0, lista.length, ...(data.processos || [])); novidades = await buscarNovidades(); if (!$('#modal-root').innerHTML && document.activeElement?.id !== 'pb') desenhar(); } } catch {} };
+  setInterval(atualizar, 5 * 60 * 1000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && Date.now() - ultima > 30000) atualizar(); });
 }
 
 // ---------------------------------------------------------------- modal
