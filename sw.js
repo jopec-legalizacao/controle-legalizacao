@@ -1,6 +1,6 @@
 // Service worker: deixa o app instalável, abre a "casca" offline e mostra as
 // notificações do link público. Os dados sempre vêm do Supabase (rede primeiro).
-const CACHE = 'legaliza-v7';
+const CACHE = 'legaliza-v8';
 const ARQS = ['./', 'index.html', 'styles.css', 'app.js', 'config.js', 'presets-sugeridos.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(ARQS)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => {

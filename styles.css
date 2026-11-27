@@ -655,3 +655,13 @@ body.com-modal{overflow:hidden}
   .nov-grade{grid-template-columns:1fr}
   .pub-barra .busca-proc{flex:1 1 100%}
 }
+
+/* =================== Ditado por voz =================== */
+.mic-wrap{position:relative;display:block;width:100%}
+.mic-wrap>input,.mic-wrap>textarea{width:100%;padding-right:44px !important}
+.btn-mic{position:absolute;right:5px;top:50%;transform:translateY(-50%);width:34px;height:34px;border:0;border-radius:9px;background:transparent;color:var(--sub);display:grid;place-items:center;cursor:pointer}
+.mic-wrap.area .btn-mic{top:8px;transform:none}
+.btn-mic:hover{background:var(--hover);color:var(--azul-t)}
+.btn-mic.gravando{background:var(--vermelho);color:#fff;animation:mic-pulso 1.2s ease-in-out infinite}
+@keyframes mic-pulso{0%,100%{box-shadow:0 0 0 0 rgb(192 32 43 / .45)}50%{box-shadow:0 0 0 7px rgb(192 32 43 / 0)}}
+@media (max-width:860px){ .mic-wrap:has(#n-txt){flex:1 1 100% !important} }

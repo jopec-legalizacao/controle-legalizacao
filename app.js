@@ -109,6 +109,7 @@ const IC_PATH = {
   sol: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
   lua: '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/>',
   auto: '<rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/>',
+  mic: '<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8"/>',
   sino: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
 };
 const ic = (k, sz = 18) => `<svg class="svg-ic" width="${sz}" height="${sz}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC_PATH[k] || ''}</svg>`;
@@ -384,7 +385,7 @@ function vPainel(el) {
           <div class="pd-ult">${ult ? `<span>${ult.data === hoje() ? 'Hoje' : fmtD(ult.data).slice(0, 5)}:</span> ${h(ult.texto)}` : '<i>Nenhum status registrado ainda</i>'}</div>
         </div>
         ${admin() ? `<div class="pd-in">
-          <input data-rot="${p.id}" placeholder="Novidade de hoje…" value="${feito ? h(feito.texto) : ''}" ${feito ? 'data-ja="1"' : ''} list="dl-frases" aria-label="Novidade de hoje para ${h(p.cliente)}">
+          <div class="mic-wrap"><input data-rot="${p.id}" placeholder="Novidade de hoje…" value="${feito ? h(feito.texto) : ''}" ${feito ? 'data-ja="1"' : ''} list="dl-frases" aria-label="Novidade de hoje para ${h(p.cliente)}">${botaoMic(`[data-rot="${p.id}"]`)}</div>
           ${ult && !feito ? `<button class="btn sm ghost" data-rep="${p.id}" title="Copiar o último status para hoje">↺ Repetir último</button>` : ''}
         </div>` : ''}
       </div>`;
@@ -401,6 +402,7 @@ function vPainel(el) {
   const bn = $('#b-novo', el); if (bn) bn.onclick = () => formProcesso();
   const bal = $('#b-alerta', el); if (bal) bal.onclick = () => escolherAlerta();
 
+  ligarMic(el);
   const ins = $$('[data-rot]', el);
   const mudou = inp => inp.value.trim() && inp.value.trim() !== (inp.defaultValue || '').trim();
   const contar = () => {
@@ -686,7 +688,7 @@ function abrirDetalhe(id, mostrarTudo = false) {
         <div class="secao" style="margin-top:6px"><h3>Diário</h3><span class="dica">Modo: ${modoDe(p) === 'repetir' ? 'repete o último status' : 'sem movimentação'}${p.modo_diario === 'padrao' ? ' (padrão)' : ''}</span></div>
         ${admin() && ['andamento', 'pausado'].includes(p.situacao) ? `
         <div class="card" style="padding:12px;margin-bottom:10px">
-          <div style="display:flex;gap:8px;flex-wrap:wrap"><input id="n-txt" class="busca" style="max-width:none;flex:3 1 220px" placeholder="O que aconteceu? (ex.: DBE feito)" list="dl-frases2"><input type="date" id="n-data" class="busca" style="flex:0 0 150px;min-width:0" value="${hoje()}"><button class="btn pri" id="b-reg">Registrar</button></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap"><div class="mic-wrap" style="flex:3 1 220px"><input id="n-txt" class="busca" style="max-width:none;width:100%" placeholder="O que aconteceu? (ex.: DBE feito)" list="dl-frases2">${botaoMic('#n-txt')}</div><input type="date" id="n-data" class="busca" style="flex:0 0 150px;min-width:0" value="${hoje()}"><button class="btn pri" id="b-reg">Registrar</button></div>
           ${frasesHTML('n-txt')}
           <datalist id="dl-frases2">${S.config.frases.map(f => `<option value="${h(f)}">`).join('')}</datalist></div>` : ''}
         <div class="diario">${dias.map(d => d.auto
@@ -724,7 +726,7 @@ function abrirDetalhe(id, mostrarTudo = false) {
   const bt = $('#b-tudo', m); if (bt) bt.onclick = () => abrirDetalhe(id, true);
   ligarFin(p, m);
   if (!admin()) return;
-  ligarFrases('n-txt');
+  ligarFrases('n-txt'); ligarMic(m);
   const br = $('#b-reg', m); if (br) br.onclick = async () => { const t = $('#n-txt').value.trim(); if (!t) return $('#n-txt').focus(); if (await acao(() => registrar(id, t, { data: $('#n-data').value || hoje() }), 'Registrado')) abrirDetalhe(id); };
   const nt = $('#n-txt', m); if (nt) nt.onkeydown = e => { if (e.key === 'Enter') br.click(); };
   $$('[data-delreg]', m).forEach(b => b.onclick = async () => { if (await confirmar('Apagar este registro do diário?') && await acao(() => DB.del(T.atual, 'id', b.dataset.delreg), 'Registro apagado')) abrirDetalhe(id); });
@@ -920,8 +922,8 @@ async function formProcesso(p = null, opts = {}) {
       <div class="campo c2"><label>Previsão de pagamento do restante</label><input type="date" id="f-prevpag"></div>
       <div class="campo c2"><label>Forma de pagamento</label><select id="f-forma"><option value="">—</option>${FIN_FORMAS.map(x => `<option>${x}</option>`).join('')}</select></div>
       <div class="campo c6 fin-calc" id="f-fincalc"></div>` : ''}
-      ${novo ? `<div class="campo c6"><label>Status atual (vai para o diário de hoje)</label><input id="f-st0" list="dl-frases3" placeholder="Ex.: Orçamento enviado" value="${h(opts.status || '')}">${frasesHTML('f-st0')}</div>` : ''}
-      <div class="campo c6"><label>Observações</label><textarea id="f-obs">${h(p.observacoes || '')}</textarea></div>
+      ${novo ? `<div class="campo c6"><label>Status atual (vai para o diário de hoje)</label><div class="mic-wrap"><input id="f-st0" list="dl-frases3" placeholder="Ex.: Orçamento enviado" value="${h(opts.status || '')}">${botaoMic('#f-st0')}</div>${frasesHTML('f-st0')}</div>` : ''}
+      <div class="campo c6"><label>Observações</label><div class="mic-wrap area"><textarea id="f-obs">${h(p.observacoes || '')}</textarea>${botaoMic('#f-obs')}</div></div>
     </div>
     <datalist id="dl-clientes">${[...new Set(S.processos.map(x => x.cliente))].sort().map(c => `<option value="${h(c)}">`).join('')}</datalist>
     <datalist id="dl-resp">${S.config.responsaveis.map(r => `<option value="${h(r)}">`).join('')}</datalist>
@@ -960,6 +962,7 @@ async function formProcesso(p = null, opts = {}) {
   };
   desenha();
   if ($('#f-st0')) ligarFrases('f-st0');
+  ligarMic($('#modal-root'));
   $('#b-aplicar').onclick = async () => {
     const pr = S.presets.find(x => x.id === $('#f-preset').value); if (!pr) return toast('Escolha um preset');
     if (etapas.length && !(await confirmar('Substituir a esteira atual pelas etapas do preset?'))) return;
@@ -1697,6 +1700,167 @@ async function telaPublica(token) {
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && Date.now() - ultima > 30000) atualizar(); });
 }
 
+// ---------------------------------------------------------------- ditado por voz (microfone do celular/computador)
+const Fala = window.SpeechRecognition || window.webkitSpeechRecognition;
+const botaoMic = alvo => Fala ? `<button type="button" class="btn-mic" data-mic='${alvo}' title="Ditar por voz" aria-label="Ditar por voz">${ic('mic', 16)}</button>` : '';
+let falaAtiva = null;
+function ligarMic(raiz = document) { $$('[data-mic]', raiz).forEach(b => b.onclick = e => { e.preventDefault(); e.stopPropagation(); ditar(b, document.querySelector(b.dataset.mic)); }); }
+function ditar(btn, inp) {
+  if (!inp) return;
+  if (falaAtiva) { falaAtiva.stop(); return; }
+  const r = new Fala(); r.lang = 'pt-BR'; r.interimResults = true; r.continuous = false;
+  const base = inp.value.trim() ? inp.value.replace(/\s*$/, ' ') : '';
+  r.onresult = ev => {
+    let t = ''; for (const x of ev.results) t += x[0].transcript; t = t.trim();
+    if (!base && t) t = t[0].toUpperCase() + t.slice(1);
+    inp.value = base + t; inp.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  r.onerror = ev => { if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') toast('Libere o microfone para este site (cadeado ao lado do endereço)', 'erro'); else if (!['no-speech', 'aborted'].includes(ev.error)) toast('Não entendi. Toque no microfone e fale de novo.', 'erro'); };
+  r.onend = () => { falaAtiva = null; btn.classList.remove('gravando'); btn.title = 'Ditar por voz'; inp.focus(); };
+  try { r.start(); falaAtiva = r; btn.classList.add('gravando'); btn.title = 'Ouvindo… toque para parar'; } catch { toast('Microfone indisponível agora', 'erro'); }
+}
+
+// ---------------------------------------------------------------- comandos rápidos (window.JOPEC)
+// Permite atualizar o controle pelo console do navegador ou pelo Claude (Chrome),
+// sempre com o login de administrador desta aba. Ex.: await JOPEC.status('cemar', 'DBE deferido')
+const ST_ALIAS = { concluida: 'concluida', concluido: 'concluida', ok: 'concluida', feito: 'concluida', feita: 'concluida', andamento: 'andamento', iniciar: 'andamento', iniciada: 'andamento', atual: 'andamento', pendente: 'pendente', dispensada: 'dispensada', dispensar: 'dispensada', pular: 'dispensada' };
+const JOPEC = {
+  _ok() { if (!admin()) throw new Error('Entre como administrador nesta aba.'); },
+  async _fim(msg, id) { await carregar(); render(); if (id && $('#modal-root').innerHTML) abrirDetalhe(id); toast(msg); return 'OK · ' + msg; },
+  _proc(ref) {
+    if (ref && typeof ref === 'object') ref = ref.id;
+    const r = String(ref || '').trim(); if (!r) throw new Error('Informe o cliente.');
+    const porId = S.processos.find(p => p.id === r); if (porId) return porId;
+    const q = normEt(r), cands = S.processos.filter(p => normEt(p.cliente + ' ' + (p.cnpj || '')).includes(q));
+    const ativos = cands.filter(p => ['andamento', 'pausado'].includes(p.situacao));
+    const exato = cands.filter(p => normEt(p.cliente) === q);
+    const lista = exato.length === 1 ? exato : ativos.length === 1 ? ativos : cands;
+    if (lista.length === 1) return lista[0];
+    if (!lista.length) throw new Error(`Nenhum cliente com "${r}".`);
+    throw new Error(`Mais de um cliente com "${r}": ` + lista.slice(0, 8).map(p => `${p.cliente} [${p.situacao}] id=${p.id}`).join(' | '));
+  },
+  _etapa(p, ref) {
+    const es = etapasDe(p.id);
+    if (typeof ref === 'number' || /^\d+$/.test(String(ref))) { const e = es[+ref - 1]; if (!e) throw new Error(`A esteira tem ${es.length} etapas.`); return e; }
+    if (ref === 'atual' || ref == null) { const ia = es.map(e => e.status).lastIndexOf('andamento'); const e = ia >= 0 ? es[ia] : es.find(e => e.status === 'pendente'); if (!e) throw new Error('Não há etapa em aberto.'); return e; }
+    const q = normEt(ref), c = es.filter(e => normEt(e.nome).includes(q));
+    if (c.length === 1) return c[0];
+    throw new Error(c.length ? `Mais de uma etapa com "${ref}": ${c.map(e => e.nome).join(' | ')}` : `Etapa "${ref}" não encontrada. Etapas: ${es.map((e, i) => `${i + 1}. ${e.nome}`).join(' | ')}`);
+  },
+  _resumo(p) {
+    const pr = progresso(p), u = ultimoMovimento(p);
+    return { id: p.id, cliente: p.cliente, servico: p.servico, situacao: p.situacao, aguardando: p.aguardando, etapa: pr.total ? `${Math.min(pr.idx, pr.total)}/${pr.total} ${pr.atual ? pr.atual.nome : 'todas concluídas'}` : '—', ultimo: u ? `${fmtD(u.data)}: ${u.texto}` : '—' };
+  },
+  ajuda() {
+    return `Comandos (todos com await; "cliente" pode ser parte do nome):
+JOPEC.lista('andamento'|'pausado'|'finalizado'|'desistencia'|'todos')   JOPEC.buscar('texto')   JOPEC.ver('cliente')   JOPEC.presets()
+JOPEC.status('cliente', 'texto do dia', 'AAAA-MM-DD'?)
+JOPEC.etapa('cliente', 3 | 'nome da etapa' | 'atual', 'concluida'|'andamento'|'pendente'|'dispensada')
+JOPEC.avancar('cliente')   → conclui a etapa atual e inicia a próxima
+JOPEC.addEtapa('cliente', 'Nome', { depoisDe: 3 | 'nome', prazo: '5 dias', status: 'pendente' })   JOPEC.removerEtapa('cliente', ref)   JOPEC.renomearEtapa('cliente', ref, 'Novo nome')
+JOPEC.novo({ cliente, servico, preset: 'nome do preset', etapas: ['A','B'], etapaAtual: 2 | 'nome', status: 'texto', cnpj, tipo_cliente, responsavel, contato, aguardando, data_inicio, previsao, orcamento })
+JOPEC.aguardando('cliente', 'jopec'|'cliente'|'orgao'|'chefes')
+JOPEC.pausar('cliente', 'motivo', 'AAAA-MM-DD'?)   JOPEC.retomar('cliente')   JOPEC.desistencia('cliente', 'motivo')
+JOPEC.finalizar('cliente', { data, obs, gratificacao, etapas: 'concluida'|'dispensada'|'' })
+JOPEC.pagamento('cliente', valor, { data, forma, obs })
+JOPEC.editar('cliente', { servico, cnpj, contato, responsavel, previsao, prioridade, observacoes, tipo_cliente, cliente })`;
+  },
+  lista(sit = 'andamento') { return S.processos.filter(p => sit === 'todos' || p.situacao === sit).map(p => JOPEC._resumo(p)); },
+  buscar(t) { const q = normEt(t); return S.processos.filter(p => normEt(p.cliente + ' ' + (p.cnpj || '') + ' ' + (p.servico || '')).includes(q)).map(p => JOPEC._resumo(p)); },
+  ver(ref) {
+    const p = JOPEC._proc(ref);
+    return { ...JOPEC._resumo(p), cnpj: p.cnpj, contato: p.contato, responsavel: p.responsavel, inicio: p.data_inicio, previsao: p.previsao,
+      etapas: etapasDe(p.id).map((e, i) => `${i + 1}. [${ST_ETAPA[e.status]}] ${e.nome}${e.concluida_em ? ' (' + fmtD(e.concluida_em) + ')' : ''}`),
+      diario: atualDe(p.id).slice(-8).map(a => `${fmtD(a.data)} ${a.texto}`), financeiro: (() => { const c = calcFin(p); return c.tem ? `${moedaReal(c.pago)} pagos de ${moedaReal(c.valor)} · falta ${moedaReal(c.restante)}` : 'sem orçamento'; })() };
+  },
+  presets() { return S.presets.map(x => ({ nome: x.nome, etapas: (x.etapas || []).map(e => e.nome) })); },
+  async status(ref, texto, data) {
+    JOPEC._ok(); const p = JOPEC._proc(ref); if (!String(texto || '').trim()) throw new Error('Escreva o status.');
+    await registrar(p.id, String(texto).trim(), { data: data || hoje() });
+    return JOPEC._fim(`Status de ${p.cliente}: ${texto}`, p.id);
+  },
+  async etapa(ref, etapaRef, novo = 'concluida') {
+    JOPEC._ok(); const p = JOPEC._proc(ref), e = JOPEC._etapa(p, etapaRef), st = ST_ALIAS[normEt(novo)];
+    if (!st) throw new Error('Status da etapa: concluida, andamento, pendente ou dispensada.');
+    await DB.upd(T.etapas, e.id, { status: st, concluida_em: st === 'concluida' ? hoje() : null });
+    if (st === 'concluida') {
+      await registrar(p.id, `✔ Etapa concluída: ${e.nome}`, { tipo: 'etapa', etapa_nome: e.nome });
+      await carregar();
+      if (S.config.avancar_etapa) { const prox = etapasDe(p.id).find(x => x.ordem > e.ordem && x.status === 'pendente');
+        if (prox && !etapasDe(p.id).some(x => x.status === 'andamento')) await DB.upd(T.etapas, prox.id, { status: 'andamento' }); }
+    } else if (st === 'andamento') {
+      for (const x of etapasDe(p.id).filter(x => x.ordem > e.ordem && x.status === 'andamento')) await DB.upd(T.etapas, x.id, { status: 'pendente' });
+      await registrar(p.id, `▶ Iniciada a etapa: ${e.nome}`, { tipo: 'etapa', etapa_nome: e.nome });
+    }
+    await carregar(); const pr = progresso(S.processos.find(x => x.id === p.id));
+    return JOPEC._fim(`${p.cliente}: "${e.nome}" ${ST_ETAPA[st].toLowerCase()}${pr.total && pr.ok === pr.total ? ' · todas as etapas concluídas (use JOPEC.finalizar)' : pr.atual ? ` · agora em "${pr.atual.nome}"` : ''}`, p.id);
+  },
+  async avancar(ref) { const p = JOPEC._proc(ref); return JOPEC.etapa(p.id, 'atual', 'concluida'); },
+  async addEtapa(ref, nome, o = {}) {
+    JOPEC._ok(); const p = JOPEC._proc(ref), es = etapasDe(p.id); if (!String(nome || '').trim()) throw new Error('Nome da etapa.');
+    let pos = es.length; if (o.depoisDe != null) pos = es.indexOf(JOPEC._etapa(p, o.depoisDe)) + 1; else if (o.posicao) pos = Math.max(0, Math.min(es.length, +o.posicao - 1));
+    const st = ST_ALIAS[normEt(o.status || 'pendente')] || 'pendente';
+    const nova = { id: uid(), processo_id: p.id, nome: String(nome).trim(), prazo: o.prazo || null, descricao: o.descricao || null, status: st, concluida_em: st === 'concluida' ? hoje() : null };
+    const lista = [...es.slice(0, pos), nova, ...es.slice(pos)];
+    await DB.ins(T.etapas, { ...nova, ordem: pos });
+    for (const [i, e] of lista.entries()) if (e.id !== nova.id && e.ordem !== i) await DB.upd(T.etapas, e.id, { ordem: i });
+    return JOPEC._fim(`${p.cliente}: etapa "${nova.nome}" incluída na posição ${pos + 1}`, p.id);
+  },
+  async removerEtapa(ref, etapaRef) {
+    JOPEC._ok(); const p = JOPEC._proc(ref), e = JOPEC._etapa(p, etapaRef);
+    await DB.del(T.etapas, 'id', e.id);
+    await carregar(); for (const [i, x] of etapasDe(p.id).entries()) if (x.ordem !== i) await DB.upd(T.etapas, x.id, { ordem: i });
+    return JOPEC._fim(`${p.cliente}: etapa "${e.nome}" removida`, p.id);
+  },
+  async renomearEtapa(ref, etapaRef, nome) { JOPEC._ok(); const p = JOPEC._proc(ref), e = JOPEC._etapa(p, etapaRef); await DB.upd(T.etapas, e.id, { nome: String(nome).trim() }); return JOPEC._fim(`${p.cliente}: "${e.nome}" agora é "${nome}"`, p.id); },
+  async novo(d = {}) {
+    JOPEC._ok(); if (!String(d.cliente || '').trim()) throw new Error('Informe o nome do cliente.');
+    const dup = S.processos.find(p => normEt(p.cliente) === normEt(d.cliente) && ['andamento', 'pausado'].includes(p.situacao));
+    if (dup && !d.permitirDuplicado) throw new Error(`Já existe "${dup.cliente}" ${dup.situacao} (id=${dup.id}). Use permitirDuplicado: true se for outro processo.`);
+    let preset = null;
+    if (d.preset) { const q = normEt(d.preset); const c = S.presets.filter(x => normEt(x.nome).includes(q)); preset = c.find(x => normEt(x.nome) === q) || (c.length === 1 ? c[0] : null);
+      if (!preset) throw new Error(c.length ? `Mais de um preset com "${d.preset}": ${c.map(x => x.nome).join(' | ')}` : `Preset "${d.preset}" não existe. Presets: ${S.presets.map(x => x.nome).join(' | ')}`); }
+    const base = d.etapas ? d.etapas.map(n => typeof n === 'string' ? { nome: n } : n) : (preset?.etapas || []);
+    let iAt = -1; if (d.etapaAtual != null) { iAt = typeof d.etapaAtual === 'number' || /^\d+$/.test(d.etapaAtual) ? +d.etapaAtual - 1 : base.findIndex(e => normEt(e.nome).includes(normEt(d.etapaAtual))); if (iAt < 0 || iAt >= base.length) throw new Error('Etapa atual não encontrada na esteira.'); }
+    else if (base.length) iAt = 0;
+    const id = uid(), ini = d.data_inicio || hoje(), agora = new Date().toISOString();
+    const dados = { id, cliente: String(d.cliente).trim(), cnpj: d.cnpj || null, servico: d.servico || preset?.nome || null, preset_id: preset?.id || null, situacao: 'andamento',
+      tipo_cliente: d.tipo_cliente || 'EMPRESA', responsavel: d.responsavel || null, contato: d.contato || null, aguardando: d.aguardando || 'jopec', prioridade: d.prioridade || 'normal',
+      data_inicio: ini, previsao: d.previsao || null, modo_diario: 'padrao', observacoes: d.observacoes || null, criado_em: agora, atualizado_em: agora };
+    if (d.orcamento != null) { dados.financeiro = { orcamento: +d.orcamento, pagamentos: [], previsoes: [], reajustes: [], taxas: d.taxas || null }; dados.honorarios = +d.orcamento; }
+    await DB.ins(T.processos, dados);
+    await DB.ins(T.etapas, base.map((e, i) => ({ id: uid(), processo_id: id, ordem: i, nome: String(e.nome).trim(), descricao: e.descricao || null, prazo: e.prazo || null,
+      status: i < iAt ? 'concluida' : i === iAt ? 'andamento' : 'pendente', concluida_em: i < iAt ? hoje() : null })));
+    if (ini < hoje()) await registrar(id, `Processo aberto na esteira${dados.servico ? ': ' + dados.servico : ''}`, { tipo: 'sistema', data: ini });
+    await registrar(id, d.status || `Processo aberto na esteira${dados.servico ? ': ' + dados.servico : ''}`, { tipo: d.status ? 'registro' : 'sistema' });
+    return JOPEC._fim(`Processo novo: ${dados.cliente}${base.length ? ` · ${base.length} etapas, atual "${base[iAt]?.nome}"` : ''}`, id);
+  },
+  async aguardando(ref, quem) { JOPEC._ok(); const p = JOPEC._proc(ref), k = normEt(quem).replace('orgão', 'orgao'); if (!AGUARDANDO[k]) throw new Error('Use: jopec, cliente, orgao ou chefes.'); await DB.upd(T.processos, p.id, { aguardando: k, atualizado_em: new Date().toISOString() }); return JOPEC._fim(`${p.cliente}: ${AGUARDANDO[k]}`, p.id); },
+  async pausar(ref, motivo = '', retomar = null) { JOPEC._ok(); const p = JOPEC._proc(ref); await DB.upd(T.processos, p.id, { situacao: 'pausado', pausa_motivo: motivo || null, retomar_em: retomar }); await registrar(p.id, '⏸ Processo pausado' + (motivo ? ': ' + motivo : '') + (retomar ? ` (retomar em ${fmtD(retomar)})` : ''), { tipo: 'pausa' }); return JOPEC._fim(`${p.cliente} pausado`, p.id); },
+  async retomar(ref) { JOPEC._ok(); const p = JOPEC._proc(ref); await DB.upd(T.processos, p.id, { situacao: 'andamento', retomar_em: null, data_conclusao: p.situacao === 'pausado' ? p.data_conclusao : null }); await registrar(p.id, p.situacao === 'pausado' ? '▶ Processo retomado' : '▶ Processo reativado', { tipo: 'retomada' }); return JOPEC._fim(`${p.cliente} em andamento`, p.id); },
+  async desistencia(ref, motivo = '', data) { JOPEC._ok(); const p = JOPEC._proc(ref), d = data || hoje(); await DB.upd(T.processos, p.id, { situacao: 'desistencia', desistencia_motivo: motivo || null, data_conclusao: d }); await registrar(p.id, '✕ Desistência' + (motivo ? ': ' + motivo : ''), { tipo: 'desistencia', data: d }); return JOPEC._fim(`${p.cliente}: desistência registrada`, p.id); },
+  async finalizar(ref, o = {}) {
+    JOPEC._ok(); const p = JOPEC._proc(ref), d = o.data || hoje(), fe = o.etapas ?? 'concluida';
+    if (fe) for (const e of etapasDe(p.id).filter(x => x.status === 'pendente' || x.status === 'andamento')) await DB.upd(T.etapas, e.id, { status: fe, concluida_em: fe === 'concluida' ? d : null });
+    await DB.upd(T.processos, p.id, { situacao: 'finalizado', data_conclusao: d, ...(o.gratificacao != null ? { gratificacao: +o.gratificacao } : {}) });
+    await registrar(p.id, '✔ Processo finalizado' + (o.obs ? ': ' + o.obs : ''), { tipo: 'finalizado', data: d });
+    const c = calcFin({ ...p }); return JOPEC._fim(`${p.cliente} finalizado${c.tem && c.restante > 0 ? ` · ainda falta receber ${moedaReal(c.restante)}` : ''}`, p.id);
+  },
+  async pagamento(ref, valor, o = {}) {
+    JOPEC._ok(); const p = JOPEC._proc(ref), v = typeof valor === 'number' ? valor : numBR(valor); if (!(v > 0)) throw new Error('Valor inválido.');
+    const f = JSON.parse(JSON.stringify(finDe(p))); f.pagamentos.push({ id: uid(), data: o.data || hoje(), valor: r2(v), forma: o.forma || null, obs: o.obs || null });
+    const servico = f.reajustes.length ? +f.reajustes.at(-1).para : (f.orcamento != null && f.orcamento !== '' ? +f.orcamento : null);
+    await DB.upd(T.processos, p.id, { financeiro: f, honorarios: servico, atualizado_em: new Date().toISOString() });
+    await carregar(); const c = calcFin(S.processos.find(x => x.id === p.id));
+    return JOPEC._fim(`${p.cliente}: pagamento de ${moedaReal(v)}${c.tem ? ` · falta ${moedaReal(c.restante)}` : ''}`, p.id);
+  },
+  async editar(ref, campos = {}) {
+    JOPEC._ok(); const p = JOPEC._proc(ref), ok = ['cliente', 'servico', 'cnpj', 'contato', 'responsavel', 'previsao', 'prioridade', 'observacoes', 'tipo_cliente', 'data_inicio'];
+    const patch = Object.fromEntries(Object.entries(campos).filter(([k]) => ok.includes(k))); if (!Object.keys(patch).length) throw new Error('Campos aceitos: ' + ok.join(', '));
+    await DB.upd(T.processos, p.id, { ...patch, atualizado_em: new Date().toISOString() }); return JOPEC._fim(`${p.cliente}: ${Object.keys(patch).join(', ')} atualizado(s)`, p.id);
+  },
+};
+
 // ---------------------------------------------------------------- modal
 function modal(html, cls = '', camada = 1) {
   const R = camada === 2 ? '#modal-root2' : '#modal-root';
@@ -1722,6 +1886,7 @@ async function iniciar() {
       S.papel = (CFG.EMAILS_ADMIN || [CFG.EMAIL_ADMIN]).map(e => String(e).toLowerCase()).includes(S.email.toLowerCase()) ? 'admin' : 'equipe';
     }
     await carregar(); render();
+    if (admin()) window.JOPEC = JOPEC;
   } catch (err) { console.error(err); $('#app').innerHTML = `<div class="vazio">Erro ao carregar: ${h(err.message || err)}<br><br><button class="btn" onclick="location.reload()">Tentar de novo</button></div>`; }
 }
 (async () => {
