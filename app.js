@@ -109,6 +109,7 @@ const IC_PATH = {
   sol: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
   lua: '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/>',
   auto: '<rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/>',
+  sino: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
 };
 const ic = (k, sz = 18) => `<svg class="svg-ic" width="${sz}" height="${sz}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC_PATH[k] || ''}</svg>`;
 
@@ -184,7 +185,7 @@ const modoDe = p => p.modo_diario && p.modo_diario !== 'padrao' ? p.modo_diario 
 function progresso(p) {
   const es = etapasDe(p.id).filter(e => e.status !== 'dispensada');
   const ok = es.filter(e => e.status === 'concluida').length;
-  const atual = es.find(e => e.status === 'andamento') || es.find(e => e.status === 'pendente');
+  const ia = es.map(e => e.status).lastIndexOf('andamento'), atual = ia >= 0 ? es[ia] : es.find(e => e.status === 'pendente');
   return { total: es.length, ok, pct: es.length ? Math.round(ok / es.length * 100) : 0, atual, idx: atual ? es.indexOf(atual) + 1 : es.length };
 }
 function ultimoRegistro(p) { const a = atualDe(p.id); return a[a.length - 1]; }
@@ -1592,44 +1593,72 @@ async function telaPublica(token) {
     novidades = await buscarNovidades();
   } catch (e) { console.warn(e); }
   if (!dados) { $('#app').innerHTML = `<div class="login"><div class="login-box" style="text-align:center"><h1 style="font-family:var(--f-display)">Link inválido ou desativado</h1><p>Peça um link novo ao Departamento de Legalização da JOPEC.</p></div></div>`; return; }
-  const PS = { aba: qs.get('aba') === 'novidades' ? 'novidades' : 'andamento', busca: '', abertos: new Set(), filtroNov: '', avisos: false };
+  const PS = { modo: qs.get('aba') === 'novidades' ? 'novidades' : 'processos', aba: 'andamento', busca: '', abertos: new Set(), filtroNov: '', avisos: false };
   const lista = dados.processos || [];
   const AGCOR = { cliente: 'amarelo', orgao: 'roxo', chefes: 'azul' };
   const diasDesde = d => d ? Math.max(0, Math.round((parseD(hoje()) - parseD(d)) / 864e5)) : null;
-  const ICN = { novo: '🆕', finalizado: '✔', pausa: '⏸', retomada: '▶', desistencia: '✕', etapa: '◆', registro: '•' };
   const rotuloDia = d => { const n = diasDesde(d); return n === 0 ? 'Hoje' : n === 1 ? 'Ontem' : `${DS[parseD(d).getDay()]}, ${fmtD(d)}`; };
   const estadoSino = async () => { const s = await PUSH.inscricao(), antes = PS.avisos; PS.avisos = !!(s && PUSH.suportado() && Notification.permission === 'granted'); if (antes !== PS.avisos && !$('#modal-root').innerHTML) desenhar(); };
+  // traduz cada registro do diário num rótulo claro + texto limpo
+  const evento = x => {
+    const t = String(x.texto || '').replace(/^[✔⏸▶✕]\s*/, '');
+    let m;
+    if (x.tipo === 'novo') return { k: 'novo', r: 'Entrou na esteira', t: x.servico || '' };
+    if (x.tipo === 'finalizado') return { k: 'fim', r: 'Finalizado', t: t.replace(/^Processo finalizado:?\s*/i, '') || 'Processo concluído 🎉' };
+    if (x.tipo === 'pausa') return { k: 'pausa', r: 'Pausado', t: t.replace(/^Processo pausado:?\s*/i, '') };
+    if (x.tipo === 'retomada') return { k: 'etapa', r: 'Retomado', t: '' };
+    if (x.tipo === 'desistencia') return { k: 'desist', r: 'Desistência', t: t.replace(/^Desistência:?\s*/i, '') };
+    if ((m = t.match(/^Etapa concluída:\s*(.*)/i))) return { k: 'ok', r: 'Etapa concluída', t: m[1] };
+    if ((m = t.match(/^Iniciada a etapa:\s*(.*)/i))) return { k: 'etapa', r: 'Nova etapa', t: m[1] };
+    return { k: 'status', r: 'Status', t };
+  };
   const htmlNovidades = q => {
     const its = novidades.filter(x => (!PS.filtroNov || x.categoria === PS.filtroNov) && (!q || normEt(x.cliente + ' ' + (x.servico || '') + ' ' + x.texto).includes(q)));
-    const grupos = []; its.forEach(x => { const g = grupos.at(-1); if (g && g.d === x.data) g.its.push(x); else grupos.push({ d: x.data, its: [x] }); });
-    return `<div class="pn-filtros">${[['', 'Tudo'], ...Object.entries(PUSH_TIPOS).map(([k, v]) => [k, v[1]])].map(([k, nm]) => `<button class="chip-f ${PS.filtroNov === k ? 'on' : ''}" data-fn="${k}">${nm}</button>`).join('')}
-        <button class="pn-cta ${PS.avisos ? 'on' : ''}" data-sino>${PS.avisos ? '🔔 Avisos ativados' : '🔔 Receber avisos no celular'}</button></div>
-      ${grupos.length ? grupos.map(g => `<div class="nov-dia">${h(rotuloDia(g.d))}</div><div class="card nov-lista">${g.its.map(x => `
-        <button class="nov-it ${x.categoria}" data-np="${h(x.processo_id)}"><i>${ICN[x.tipo] || '•'}</i><span><b>${h(x.cliente)}</b>${x.tipo === 'novo' && x.servico ? `<small>${h(x.servico)}</small>` : ''}<em>${h(x.tipo === 'novo' ? 'Novo processo na esteira' : String(x.texto).replace(/^[✔⏸▶✕]\s*/, ''))}</em></span></button>`).join('')}</div>`).join('')
-        : `<div class="card vazio">${q || PS.filtroNov ? 'Nenhuma novidade com esse filtro.' : 'Ainda não há novidades desde 01/11/2026.'}</div>`}
-      <p class="nov-rod">Mostrando as novidades de 01/11/2026 em diante.</p>`;
+    // um cartão por empresa em cada dia, com o que aconteceu nela
+    const dias = [];
+    its.forEach(x => {
+      let d = dias.at(-1); if (!d || d.d !== x.data) dias.push(d = { d: x.data, emp: new Map() });
+      const k = x.processo_id || x.cliente; if (!d.emp.has(k)) d.emp.set(k, { x, evs: [] });
+      d.emp.get(k).evs.unshift(evento(x)); // dentro do dia: do mais antigo para o mais novo
+    });
+    return `${dias.length ? dias.map(d => `<section class="nov-dia"><h3>${h(rotuloDia(d.d))}<span>${d.emp.size} ${d.emp.size > 1 ? 'empresas' : 'empresa'}</span></h3>
+        <div class="nov-grade">${[...d.emp.values()].map(({ x, evs }) => {
+          const fim = evs.some(e => e.k === 'fim'), novo = evs.some(e => e.k === 'novo');
+          return `<button class="card nov-emp ${fim ? 'fim' : novo ? 'novo' : ''}" data-np="${h(x.processo_id)}">
+            <div class="nov-cab"><b>${h(x.cliente)}</b>${fim ? '<span class="chip verde">✓ Finalizado</span>' : novo ? '<span class="chip azul">Novo</span>' : ''}</div>
+            ${x.servico && !novo ? `<small class="nov-serv">${h(x.servico)}</small>` : ''}
+            <ul>${evs.map(e => `<li class="${e.k}"><span class="nov-r">${h(e.r)}</span>${e.t ? `<span class="nov-t">${h(e.t)}</span>` : ''}</li>`).join('')}</ul>
+          </button>`; }).join('')}</div></section>`).join('')
+        : `<div class="card vazio">${q || PS.filtroNov ? 'Nenhuma novidade com esse filtro.' : 'Ainda não há novidades.'}</div>`}
+      <p class="nov-rod">Novidades de 01/11/2026 em diante · toque numa empresa para ver o processo.</p>`;
   };
+  const etapaAtual = es => { const i = es.map(e => e.status).lastIndexOf('andamento'); return i >= 0 ? es[i] : es.find(e => e.status === 'pendente'); };
   const desenhar = () => {
     const q = normEt(PS.busca);
     const n = k => lista.filter(p => p.situacao === k).length;
     const abas = ['andamento', 'pausado', 'finalizado', 'desistencia'].filter(k => k === 'andamento' || n(k));
-    if (PS.aba !== 'novidades' && !abas.includes(PS.aba)) PS.aba = 'andamento';
-    const nNov = novidades.filter(x => diasDesde(x.data) <= 6).length;
+    if (!abas.includes(PS.aba)) PS.aba = 'andamento';
+    const empHoje = new Set(novidades.filter(x => diasDesde(x.data) === 0).map(x => x.processo_id)).size;
+    const nov = PS.modo === 'novidades';
     const vis = lista.filter(p => p.situacao === PS.aba && (!q || normEt(p.cliente + ' ' + (p.servico || '')).includes(q)))
       .sort((a, b) => PS.aba === 'andamento' ? a.cliente.localeCompare(b.cliente, 'pt-BR') : (b.data_conclusao || '').localeCompare(a.data_conclusao || ''));
+    const banner = !PS.avisos && !MODO_DEMO && localStorage.getItem('leg_pub_banner') !== '0' ? `<div class="pub-aviso"><span class="pub-aviso-ic">${ic('sino', 20)}</span><div><b>Receba no celular quando um processo andar</b><small>Processos novos, andamento e finalizados. Você escolhe o que quer receber.</small></div><button class="btn pri" data-sino>Ativar avisos</button><button class="pub-aviso-x" data-fechaban aria-label="Fechar">✕</button></div>` : '';
     $('#app').innerHTML = `
     <div class="shell"><header class="band"><div class="wrap topbar"><div class="brand">${LOGO_MARCA}<div>${LOGO_NOME}<h1>Legalização · Andamento dos processos</h1></div></div>
-      <div class="usr"><span class="papel">👁 Somente leitura</span><button class="btn-tema btn-sino ${PS.avisos ? 'on' : ''}" id="b-sino" data-sino title="Avisos no celular" aria-label="Avisos no celular">🔔</button>${botaoTema()}</div></div></header>
+      <div class="usr"><span class="papel">👁 Somente leitura</span><button class="btn-avisos ${PS.avisos ? 'on' : ''}" id="b-sino" data-sino title="Avisos no celular">${ic('sino', 17)}<span>${PS.avisos ? 'Avisos ligados' : 'Avisos'}</span></button>${botaoTema()}</div></div></header>
     <main class="main wrap pub">
       <div class="topo"><h2>Andamento dos processos</h2>
-        <div class="sub">Atualizado às ${new Date(dados.gerado).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} de ${new Date(dados.gerado).toLocaleDateString('pt-BR')} · a página se atualiza sozinha</div></div>
+        <div class="sub">Atualizado às ${new Date(dados.gerado).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} · a página se atualiza sozinha</div></div>
+      ${banner}
+      <div class="pub-modo seg" role="tablist"><button class="${!nov ? 'on' : ''}" data-modo="processos" role="tab">Processos <span class="n">${lista.length}</span></button><button class="${nov ? 'on' : ''}" data-modo="novidades" role="tab">Novidades${empHoje ? ` <span class="pub-hoje">${empHoje} hoje</span>` : ''}</button></div>
       <div class="pub-barra">
-        <div class="tabs">${abas.map(k => `<button class="tab ${PS.aba === k ? 'on' : ''}" data-pa="${k}">${SITUACOES[k].nome}<span class="n">${n(k)}</span></button>`).join('')}<button class="tab ${PS.aba === 'novidades' ? 'on' : ''}" data-pa="novidades">Novidades${nNov ? `<span class="n">${nNov}</span>` : ''}</button></div>
-        ${lista.length > 6 || PS.aba === 'novidades' ? `<input class="busca busca-proc" id="pb" type="search" placeholder="${PS.aba === 'novidades' ? 'Buscar nas novidades…' : 'Buscar empresa…'}" value="${h(PS.busca)}" aria-label="Buscar">` : ''}
+        ${nov ? `<div class="tabs">${[['', 'Tudo'], ['novo', 'Novos'], ['andamento', 'Andamento'], ['finalizado', 'Finalizados']].map(([k, nm]) => `<button class="tab ${PS.filtroNov === k ? 'on' : ''}" data-fn="${k}">${nm}</button>`).join('')}</div>`
+          : `<div class="tabs">${abas.map(k => `<button class="tab ${PS.aba === k ? 'on' : ''}" data-pa="${k}">${SITUACOES[k].nome}<span class="n">${n(k)}</span></button>`).join('')}</div>`}
+        <input class="busca busca-proc" id="pb" type="search" placeholder="Buscar empresa…" value="${h(PS.busca)}" aria-label="Buscar empresa">
       </div>
-      ${PS.aba === 'novidades' ? htmlNovidades(q) : vis.length ? `<div class="pub-lista">${vis.map(p => {
+      ${nov ? htmlNovidades(q) : vis.length ? `<div class="pub-lista">${vis.map(p => {
         const es = (p.etapas || []).filter(e => e.status !== 'dispensada'); const ok = es.filter(e => e.status === 'concluida').length;
-        const at = es.find(e => e.status === 'andamento') || es.find(e => e.status === 'pendente');
+        const at = etapaAtual(es);
         const pct = es.length ? Math.round(ok / es.length * 100) : 0;
         const ag = p.aguardando || 'jopec', dd = p.ultimo ? diasDesde(p.ultimo.data) : null, aberto = PS.abertos.has(p.id);
         const chips = [
@@ -1643,16 +1672,18 @@ async function telaPublica(token) {
           ${es.length && p.situacao !== 'desistencia' ? `<div class="pub-et"><div><span>${p.situacao === 'finalizado' ? 'Todas as etapas concluídas' : at ? `Etapa ${es.indexOf(at) + 1} de ${es.length} · <b>${h(at.nome)}</b>` : `${ok} de ${es.length} etapas`}</span><span class="pct">${pct}%</span></div><div class="barra"><div style="width:${pct}%"></div></div></div>` : ''}
           ${p.situacao === 'pausado' && p.pausa_motivo ? `<div class="pub-mot">Motivo da pausa: ${h(p.pausa_motivo)}</div>` : ''}
           ${p.situacao === 'desistencia' && p.desistencia_motivo ? `<div class="pub-mot">Motivo: ${h(p.desistencia_motivo)}</div>` : ''}
-          ${p.ultimo && p.situacao !== 'desistencia' ? `<div class="pub-ult"><span>${dd === 0 ? 'Hoje' : dd === 1 ? 'Ontem' : fmtD(p.ultimo.data).slice(0, 5)}</span>${h(p.ultimo.texto)}</div>` : ''}
+          ${p.ultimo && p.situacao !== 'desistencia' ? `<div class="pub-ult"><span>${dd === 0 ? 'Hoje' : dd === 1 ? 'Ontem' : fmtD(p.ultimo.data).slice(0, 5)}</span>${h(String(p.ultimo.texto).replace(/^[✔⏸▶✕]\s*/, ''))}</div>` : ''}
           ${es.length && p.situacao !== 'desistencia' ? `<button class="pub-ver" data-ver="${p.id}" aria-expanded="${aberto}">${aberto ? 'Ocultar etapas ▴' : `Ver as ${es.length} etapas ▾`}</button>
             ${aberto ? `<ol class="pub-passos">${es.map(e => `<li class="${e.status}"><i>${e.status === 'concluida' ? '✓' : ''}</i><span>${h(e.nome)}</span><small>${e.status === 'concluida' ? fmtD(e.concluida_em) : e.status === 'andamento' ? 'em andamento' : ''}</small></li>`).join('')}</ol>` : ''}` : ''}
         </article>`; }).join('')}</div>` : `<div class="card vazio">${q ? 'Nenhuma empresa encontrada.' : 'Nada por aqui.'}</div>`}
     </main></div>`;
-    $$('[data-pa]').forEach(b => b.onclick = () => { if ((PS.aba === 'novidades') !== (b.dataset.pa === 'novidades')) PS.busca = ''; PS.aba = b.dataset.pa; desenhar(); });
+    $$('[data-modo]').forEach(b => b.onclick = () => { PS.modo = b.dataset.modo; desenhar(); window.scrollTo(0, 0); });
+    $$('[data-pa]').forEach(b => b.onclick = () => { PS.aba = b.dataset.pa; desenhar(); });
     $$('[data-ver]').forEach(b => b.onclick = () => { const id = b.dataset.ver; PS.abertos.has(id) ? PS.abertos.delete(id) : PS.abertos.add(id); desenhar(); });
     $$('[data-fn]').forEach(b => b.onclick = () => { PS.filtroNov = b.dataset.fn; desenhar(); });
     $$('[data-sino]').forEach(b => b.onclick = () => formNotificacoes(token, async () => { await estadoSino(); desenhar(); }));
-    $$('[data-np]').forEach(b => b.onclick = () => { const p = lista.find(x => x.id === b.dataset.np); if (!p) return; PS.aba = p.situacao; PS.busca = ''; PS.abertos.add(p.id); desenhar();
+    $$('[data-fechaban]').forEach(b => b.onclick = () => { localStorage.setItem('leg_pub_banner', '0'); desenhar(); });
+    $$('[data-np]').forEach(b => b.onclick = () => { const p = lista.find(x => x.id === b.dataset.np); if (!p) return; PS.modo = 'processos'; PS.aba = p.situacao; PS.busca = ''; PS.abertos.add(p.id); desenhar();
       const el = document.getElementById('pc-' + p.id); if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.add('destaque'); setTimeout(() => el.classList.remove('destaque'), 1800); } });
     ligarTema();
     const pb = $('#pb'); if (pb) pb.oninput = () => { PS.busca = pb.value; const pos = pb.selectionStart; desenhar(); const n = $('#pb'); n.focus(); n.setSelectionRange(pos, pos); };

@@ -613,3 +613,45 @@ body.com-modal{overflow:hidden}
 .pn-sw input[type=checkbox]{width:18px;height:18px;accent-color:var(--azul)}
 .pn-sw input[type=date]{padding:6px 8px;border:1px solid var(--borda-campo);border-radius:8px;background:var(--card);color:var(--txt);font-family:inherit}
 @media (max-width:860px){ .pn-cta{margin-left:0;flex:1 1 100%} .usr .btn-sino{display:grid} }
+
+/* =================== Página pública v3 (mais clara) =================== */
+.btn-avisos{height:36px;display:inline-flex;align-items:center;gap:7px;padding:0 13px;border:1.5px solid rgb(255 255 255 / .55);background:transparent;color:#fff;border-radius:10px;cursor:pointer;font-family:inherit;font-weight:600;font-size:13px;white-space:nowrap}
+.btn-avisos:hover{background:rgb(255 255 255 / .12)}
+.btn-avisos.on{background:rgb(255 255 255 / .16);border-color:#fff}
+.btn-avisos.on .svg-ic{color:#8ff0ad}
+.pub-aviso{display:flex;align-items:center;gap:14px;background:var(--card);border:1px solid var(--borda);border-left:4px solid var(--navy);border-radius:14px;padding:12px 14px 12px 16px;margin:0 0 16px;position:relative}
+.pub-aviso-ic{width:40px;height:40px;flex:0 0 40px;border-radius:50%;display:grid;place-items:center;background:var(--azul-c);color:var(--azul-t)}
+.pub-aviso>div{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
+.pub-aviso b{font-size:14.5px}.pub-aviso small{font-size:13px;color:var(--sub)}
+.pub-aviso .btn{flex:0 0 auto}
+.pub-aviso-x{border:0;background:none;color:var(--sub);cursor:pointer;font-size:14px;padding:6px;border-radius:8px}
+.pub-aviso-x:hover{background:var(--hover)}
+.pub-modo{display:flex;width:100%;max-width:420px;margin-bottom:14px;padding:4px;border-radius:13px}
+.pub-modo button{flex:1;justify-content:center;font-size:14.5px;padding:9px 12px;border-radius:10px}
+.pub-modo .n{opacity:.6;font-weight:600}
+.pub-hoje{background:var(--navy);color:#fff;border-radius:20px;padding:1px 8px;font-size:11.5px;font-weight:700}
+.nov-filtros{display:flex;gap:6px;flex-wrap:wrap;margin:-2px 0 16px}
+.nov-dia{margin-bottom:22px}
+.nov-dia h3{display:flex;align-items:baseline;gap:10px;margin:0 2px 10px;font:800 17px var(--f-display);color:var(--txt)}
+.nov-dia h3 span{font-weight:600;font-size:12.5px;font-family:inherit;color:var(--sub);text-transform:none;letter-spacing:0}
+.nov-grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:10px}
+.nov-emp{display:flex;flex-direction:column;gap:4px;text-align:left;padding:14px 16px;border-left:4px solid var(--borda-forte);cursor:pointer;font-family:inherit;color:var(--txt);width:100%;transition:transform .12s,box-shadow .12s}
+.nov-emp:hover{transform:translateY(-1px);box-shadow:0 8px 20px rgb(0 0 0 / .08)}
+.nov-emp.fim{border-left-color:var(--verde)} .nov-emp.novo{border-left-color:var(--azul)}
+.nov-cab{display:flex;gap:8px;align-items:flex-start;justify-content:space-between}
+.nov-cab b{font:700 15px/1.3 var(--f-display)}
+.nov-serv{color:var(--sub);font-size:12.5px;line-height:1.35}
+.nov-emp ul{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:7px}
+.nov-emp li{display:flex;flex-direction:column;gap:1px;padding-left:12px;border-left:2px solid var(--borda)}
+.nov-r{font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--sub)}
+.nov-t{font-size:14px;line-height:1.4;color:var(--txt);overflow-wrap:anywhere}
+.nov-emp li.ok{border-left-color:var(--verde)} .nov-emp li.ok .nov-r,.nov-emp li.fim .nov-r{color:var(--verde)}
+.nov-emp li.etapa{border-left-color:var(--azul)} .nov-emp li.etapa .nov-r,.nov-emp li.novo .nov-r{color:var(--azul-t)}
+.nov-emp li.pausa .nov-r{color:var(--amarelo)} .nov-emp li.desist .nov-r{color:var(--vermelho)}
+@media (max-width:860px){
+  .btn-avisos span{display:none} .btn-avisos{padding:0;width:34px;justify-content:center}
+  .pub-aviso{flex-wrap:wrap;padding-right:40px} .pub-aviso .btn{flex:1 1 100%} .pub-aviso-x{position:absolute;top:8px;right:8px}
+  .pub-modo{max-width:none}
+  .nov-grade{grid-template-columns:1fr}
+  .pub-barra .busca-proc{flex:1 1 100%}
+}
